@@ -39,7 +39,6 @@ const ChessboardGame = () => {
   const [moveFrom, setMoveFrom] = useState<Square | ''>('');
   const [moveTo, setMoveTo] = useState<Square | null>(null);
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
-  // const [promotionTo, setPromotionTo] = useState<PieceSymbol | null>(null); // This state seems unused
   const [rightClickedSquares, setRightClickedSquares] = useState<Record<string, React.CSSProperties>>({});
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({});
   const [lastMoveSquares, setLastMoveSquares] = useState<Record<string, React.CSSProperties>>({});
@@ -77,7 +76,7 @@ const ChessboardGame = () => {
       setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
       setGameOver(false);
     }
-  }, [game]); // Keep game as dependency, setters are stable
+  }, [game]);
 
   useEffect(() => {
     updateGameStatus();
@@ -90,18 +89,22 @@ const ChessboardGame = () => {
       setFen(update.fen());
       return update;
     });
-  }, []); // setGame and setFen are stable setters, so empty array or [setGame, setFen]
+  }, []);
 
   const makeMove = useCallback((move: ShortMove | string) => {
-    // Check if game is over before attempting a move
-    if (game.isGameOver()) {
+    if (game.isGameOver() && !gameOver) { // Check if game instance is over but state not yet updated
         toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
         return false;
     }
+    if (gameOver) { // Check already updated gameOver state
+      toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
+      return false;
+    }
+
     try {
-      const result = game.move(move); // Operate on the game instance from state directly
+      const result = game.move(move); 
       if (result) {
-        setFen(game.fen()); // Update FEN from the modified game instance
+        setFen(game.fen()); 
         setLastMoveSquares({
           [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
           [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
@@ -117,7 +120,6 @@ const ChessboardGame = () => {
           setIsBlackTimerActive(true);
           setIsWhiteTimerActive(false);
         }
-        // updateGameStatus() will be called by the useEffect listening to 'fen'
         return true;
       }
     } catch (e) {
@@ -125,20 +127,17 @@ const ChessboardGame = () => {
       return false;
     }
     return false;
-  // It's better to pass `game` instance to `makeMove` if it's not using `safeGameMutate`
-  // or ensure `game` object consistency. For now, this structure is common.
-  // Adding `game` to deps, `toast` and setters.
-  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR]);
+  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR, gameOver]);
 
 
   const makeRandomMove = useCallback(() => {
-    if (game.isGameOver()) return;
+    if (game.isGameOver() || gameOver) return;
     const possibleMoves = game.moves({ verbose: true });
     if (possibleMoves.length === 0) return;
     const randomIndex = Math.floor(Math.random() * possibleMoves.length);
     const randomMove = possibleMoves[randomIndex];
     makeMove({ from: randomMove.from, to: randomMove.to, promotion: randomMove.promotion });
-  }, [game, makeMove]);
+  }, [game, makeMove, gameOver]);
 
   useEffect(() => {
     if (gameOver) return;
@@ -152,24 +151,30 @@ const ChessboardGame = () => {
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver]); // game is already here, fen implies game state changes too
-
-
+  }, [fen, playerMode, game, makeRandomMove, gameOver]);
+  
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
     if (gameOver) return false;
     
-    const currentTurn = game.turn();
-    if ((playerMode === 'pvaWhite' && currentTurn === 'b') || (playerMode === 'pvaBlack' && currentTurn === 'w')) {
+    const gameTurn = game.turn(); // 'w' or 'b'
+    const movingPieceColor = piece.charAt(0); // 'w' or 'b'
+
+    // Prevent human interaction if it's AI's turn in Player vs AI modes
+    if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
       return false; 
     }
-    if ((boardOrientation === 'black' && piece.startsWith('w')) || (boardOrientation === 'white' && piece.startsWith('b'))){
-        if (playerMode === 'pvp') return false;
+
+    // Prevent moving a piece of the wrong color for the current turn.
+    // This applies to PvP and the human's turn in PvA.
+    if (gameTurn !== movingPieceColor) {
+        return false;
     }
 
-    const gameMove = {
+    // Check for promotion
+    const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      promotion: 'q' as PieceSymbol,
+      promotion: 'q', // Default promotion
     };
 
     const foundMove = game.moves({ verbose: true }).find(m => m.from === sourceSquare && m.to === targetSquare);
@@ -181,7 +186,6 @@ const ChessboardGame = () => {
       return false; 
     }
 
-    // Use the memoized makeMove
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
@@ -216,11 +220,10 @@ const ChessboardGame = () => {
         setOptionSquares({});
         return;
       }
-      const piece = game.get(moveFrom);
-      if (piece) { // Ensure piece exists before attempting to get its type
-        onPieceDrop(moveFrom, square, (piece.color + piece.type) as Piece);
+      const pieceToMove = game.get(moveFrom);
+      if (pieceToMove) {
+        onPieceDrop(moveFrom, square, (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece);
       } else {
-         // Handle case where piece might be null if state is inconsistent, though unlikely here
          setMoveFrom('');
          setOptionSquares({});
       }
@@ -229,7 +232,9 @@ const ChessboardGame = () => {
   
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
     if (piece && moveFrom && moveTo) {
-      makeMove({ from: moveFrom, to: moveTo, promotion: piece.charAt(1).toLowerCase() as PieceSymbol });
+      // Ensure promotion piece symbol is just the type (q, r, b, n)
+      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol;
+      makeMove({ from: moveFrom, to: moveTo, promotion: promotionSymbol });
     }
     setShowPromotionDialog(false);
     setMoveFrom('');
@@ -239,11 +244,11 @@ const ChessboardGame = () => {
   };
 
   const resetGame = useCallback(() => {
-    safeGameMutate(g => g.reset());
-    setFen(new Chess().fen());
+    const newGame = new Chess();
+    setGame(newGame); // Set new game instance
+    setFen(newGame.fen()); // Set fen from new game instance
     setGameOver(false);
-    setIsWhiteTimerActive(playerMode !== 'pvaBlack');
-    setIsBlackTimerActive(playerMode === 'pvaBlack');
+    
     setWhiteTime(INITIAL_TIME_SECONDS);
     setBlackTime(INITIAL_TIME_SECONDS);
     setMoveFrom('');
@@ -251,26 +256,40 @@ const ChessboardGame = () => {
     setLastMoveSquares({});
     setRightClickedSquares({});
     setTimerResetKey(prev => prev + 1);
-    if (playerMode === 'pvp') setBoardOrientation('white');
-    else if (playerMode === 'pvaWhite') setBoardOrientation('white');
-    else if (playerMode === 'pvaBlack') setBoardOrientation('black');
-    // Do NOT call updateGameStatus() here; it's handled by the useEffect watching 'fen'
-  }, [playerMode, safeGameMutate]); // Removed updateGameStatus from deps
+
+    if (playerMode === 'pvp') {
+      setBoardOrientation('white');
+      setIsWhiteTimerActive(true); // White starts in PvP
+      setIsBlackTimerActive(false);
+    } else if (playerMode === 'pvaWhite') {
+      setBoardOrientation('white');
+      setIsWhiteTimerActive(true); // Human (White) starts
+      setIsBlackTimerActive(false);
+    } else if (playerMode === 'pvaBlack') {
+      setBoardOrientation('black');
+      setIsWhiteTimerActive(false); 
+      setIsBlackTimerActive(true); // Human (Black) effectively starts if AI is white and moves first
+                                  // Or, if AI is white and doesn't move first, black timer starts.
+                                  // Let's assume AI (white) makes the first move if pvaBlack.
+    }
+     // updateGameStatus will be called by useEffect listening to fen
+  }, [playerMode, safeGameMutate]); // safeGameMutate is stable if its deps are stable
 
   useEffect(() => {
     resetGame();
-  }, [playerMode, resetGame]); // This useEffect should now be stable
+  }, [playerMode, resetGame]); 
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
-    if (gameOver) return;
+    if (gameOver) return; // Prevent multiple calls if already game over
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-  }, [gameOver]); // Setters are stable
+  }, [gameOver]);
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
+    // resetGame will be called by the useEffect watching playerMode
   };
   
   return (
@@ -286,14 +305,17 @@ const ChessboardGame = () => {
             <SelectItem value="pvaBlack">Play as Black (vs AI)</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={resetGame} variant="outline">Reset Game</Button>
+        <Button onClick={() => {
+          resetGame(); // Call resetGame directly
+          // updateGameStatus will be triggered by fen change in resetGame
+        }} variant="outline">Reset Game</Button>
       </div>
 
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
         <TimerDisplay
-            initialTime={INITIAL_TIME_SECONDS} // Pass initial constant, not state
+            initialTime={INITIAL_TIME_SECONDS}
             isActive={isBlackTimerActive && !gameOver}
-            onTimeUp={() => handleTimeUp('black')} // Memoize with useCallback if handleTimeUp changes often
+            onTimeUp={() => handleTimeUp('black')}
             key={`black-timer-${timerResetKey}`}
           />
       </div>
@@ -325,9 +347,9 @@ const ChessboardGame = () => {
 
        <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
          <TimerDisplay
-            initialTime={INITIAL_TIME_SECONDS} // Pass initial constant, not state
+            initialTime={INITIAL_TIME_SECONDS}
             isActive={isWhiteTimerActive && !gameOver}
-            onTimeUp={() => handleTimeUp('white')} // Memoize with useCallback if handleTimeUp changes often
+            onTimeUp={() => handleTimeUp('white')}
             key={`white-timer-${timerResetKey}`}
           />
       </div>
@@ -344,9 +366,15 @@ const ChessboardGame = () => {
               <DialogDescription>Choose a piece to promote your pawn to.</DialogDescription>
             </DialogHeader>
             <div className="flex justify-around p-4">
-              {['q', 'r', 'b', 'n'].map((p) => (
-                <Button key={p} variant="outline" onClick={() => onPromotionPieceSelect(game.turn() + p as PromotionPieceOption)} className="w-16 h-16 text-2xl">
-                  {p.toUpperCase()}
+              {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((pSymbol) => (
+                <Button 
+                  key={pSymbol} 
+                  variant="outline" 
+                  onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)} 
+                  className="w-16 h-16 text-3xl" // Increased text size for better visibility of piece symbols
+                >
+                  {/* Display standard algebraic notation for pieces */}
+                  {pSymbol === 'n' ? 'N' : pSymbol.toUpperCase()}
                 </Button>
               ))}
             </div>
