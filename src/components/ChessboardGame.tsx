@@ -71,6 +71,12 @@ const CapturedPiecesDisplay: React.FC<CapturedPiecesDisplayProps> = ({ capturedP
   );
 };
 
+interface ToastMessage {
+  id: string; // To ensure useEffect triggers even for same message type
+  title: string;
+  description: string;
+  variant: 'default' | 'destructive';
+}
 
 const ChessboardGame = () => {
   const { toast } = useToast();
@@ -98,6 +104,19 @@ const ChessboardGame = () => {
 
   const [capturedByWhite, setCapturedByWhite] = useState<PieceSymbol[]>([]);
   const [capturedByBlack, setCapturedByBlack] = useState<PieceSymbol[]>([]);
+
+  const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
+
+  useEffect(() => {
+    if (toastMessage) {
+      toast({
+        title: toastMessage.title,
+        description: toastMessage.description,
+        variant: toastMessage.variant,
+      });
+      setToastMessage(null); // Reset after showing
+    }
+  }, [toastMessage, toast]);
 
 
   const CHESS_BOARD_LIGHT_COLOR = 'hsl(var(--chess-board-light))';
@@ -132,79 +151,71 @@ const ChessboardGame = () => {
     updateGameStatus();
   }, [fen, updateGameStatus]);
 
-  const safeGameMutate = useCallback((modify: (g: Chess) => void) => {
-    setGame((currentGame) => {
-      const update = new Chess(currentGame.fen());
-      modify(update);
-      setFen(update.fen());
-      return update;
-    });
-  }, []);
-
  const makeMove = useCallback((move: ShortMove | string) => {
     if (gameOver) {
-      toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
+      setToastMessage({
+        id: `gameOver-${Date.now()}`,
+        title: "Game Over",
+        description: "Cannot make moves, the game has ended.",
+        variant: "destructive"
+      });
       return false;
     }
 
-    let localMoveSuccessful = false; 
+    const gameCopy = new Chess(game.fen());
+    let moveResult;
+    try {
+      moveResult = gameCopy.move(move);
+    } catch (e) {
+      console.error("Error during chess.js game.move:", e);
+      setToastMessage({
+        id: `moveError-${Date.now()}`,
+        title: "Move Error",
+        description: "An unexpected error occurred while processing the move.",
+        variant: "destructive"
+      });
+      return false;
+    }
 
-    safeGameMutate(g => {
-      try {
-        const result = g.move(move);
-        if (result) {
-          setLastMoveSquares({
-            [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
-            [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
-          });
-          setOptionSquares({});
-          setMoveFrom('');
-          setMoveTo(null);
+    if (!moveResult) {
+      // Illegal move, not necessarily an error to toast about unless desired
+      // setToastMessage({ id: `illegalMove-${Date.now()}`, title: "Illegal Move", description: "That move is not allowed.", variant: "default" });
+      return false;
+    }
 
-          if (result.captured) {
-            if (result.color === 'w') { 
-              setCapturedByWhite(prev => [...prev, result.captured!]);
-            } else { 
-              setCapturedByBlack(prev => [...prev, result.captured!]);
-            }
-          }
+    setGame(gameCopy);
+    setFen(gameCopy.fen());
 
-          if (g.turn() === 'w') {
-            setIsWhiteTimerActive(true);
-            setIsBlackTimerActive(false);
-          } else {
-            setIsBlackTimerActive(true);
-            setIsWhiteTimerActive(false);
-          }
-          localMoveSuccessful = true;
-        } else {
-          localMoveSuccessful = false;
-        }
-      } catch (e) {
-        console.error("Error during game.move:", e);
-        toast({
-          title: "Invalid Move Attempt",
-          description: "The attempted move was not valid.",
-          variant: "destructive",
-        });
-        localMoveSuccessful = false;
-      }
+    setLastMoveSquares({
+      [moveResult.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
+      [moveResult.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
     });
+    setOptionSquares({});
+    setMoveFrom('');
+    setMoveTo(null);
 
-    return localMoveSuccessful;
+    if (moveResult.captured) {
+      if (moveResult.color === 'w') { // White captured a black piece
+        setCapturedByWhite(prev => [...prev, moveResult.captured!]);
+      } else { // Black captured a white piece
+        setCapturedByBlack(prev => [...prev, moveResult.captured!]);
+      }
+    }
+
+    if (gameCopy.turn() === 'w') {
+      setIsWhiteTimerActive(true);
+      setIsBlackTimerActive(false);
+    } else {
+      setIsBlackTimerActive(true);
+      setIsWhiteTimerActive(false);
+    }
+    return true;
   }, [
-    gameOver, 
-    safeGameMutate, 
-    toast, 
-    HIGHLIGHT_LAST_MOVE_COLOR, 
-    setCapturedByWhite, 
-    setCapturedByBlack, 
-    setIsWhiteTimerActive, 
-    setIsBlackTimerActive,
-    setLastMoveSquares,
-    setOptionSquares,
-    setMoveFrom,
-    setMoveTo
+    game,
+    gameOver,
+    HIGHLIGHT_LAST_MOVE_COLOR,
+    // setToastMessage is implicitly stable from useState
+    // setGame, setFen, etc. are stable
   ]);
 
 
@@ -248,16 +259,17 @@ const ChessboardGame = () => {
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      promotion: 'q',
+      promotion: 'q', // Default promotion to Queen
     };
 
+    // Check if the move is a promotion
     const foundMove = game.moves({ verbose: true }).find(m => m.from === sourceSquare && m.to === targetSquare);
 
-    if (foundMove?.flags.includes('p')) {
-      setMoveFrom(sourceSquare);
+    if (foundMove?.flags.includes('p')) { // 'p' flag indicates pawn promotion
+      setMoveFrom(sourceSquare); // Store for promotion dialog
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false;
+      return false; // Prevent react-chessboard from making the move; we'll handle it after promotion
     }
 
     const moveSuccessful = makeMove(gameMove);
@@ -267,9 +279,10 @@ const ChessboardGame = () => {
   const onSquareClick = (square: Square) => {
     if (gameOver) return;
 
-    if (!moveFrom) {
+    if (!moveFrom) { // First click (selecting a piece)
       const pieceOnSquare = game.get(square);
       if (pieceOnSquare && pieceOnSquare.color === game.turn()) {
+         // Prevent player from moving AI's pieces or if it's not their turn
          if ((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w')) {
           return;
         }
@@ -279,24 +292,26 @@ const ChessboardGame = () => {
         moves.forEach(move => {
           newOptionSquares[move.to] = {
             background: game.get(move.to) && game.get(move.to)?.color !== game.turn()
-              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`
-              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`,
+              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)` // Capture
+              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`, // Move
             borderRadius: '50%',
           };
         });
-        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR };
+        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR }; // Highlight selected square
         setOptionSquares(newOptionSquares);
       }
-    } else {
-      if (square === moveFrom) {
+    } else { // Second click (selecting target square or deselecting)
+      if (square === moveFrom) { // Clicked same square again
         setMoveFrom('');
         setOptionSquares({});
         return;
       }
+      // Attempt to make the move (same logic as onPieceDrop)
       const pieceToMove = game.get(moveFrom);
       if (pieceToMove) {
         onPieceDrop(moveFrom, square, (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece);
       } else {
+         // Should not happen if moveFrom is set correctly
          setMoveFrom('');
          setOptionSquares({});
       }
@@ -304,15 +319,16 @@ const ChessboardGame = () => {
   };
 
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
+    // piece is like 'wQ' or 'bN'
     if (piece && moveFrom && moveTo) {
-      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol;
+      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol; // 'q', 'n', etc.
       makeMove({ from: moveFrom, to: moveTo, promotion: promotionSymbol });
     }
     setShowPromotionDialog(false);
-    setMoveFrom('');
+    setMoveFrom(''); // Reset moveFrom after promotion
     setMoveTo(null);
-    setOptionSquares({});
-    return true;
+    setOptionSquares({}); // Clear highlights
+    return true; // Indicate promotion was handled
   };
 
   const resetGame = useCallback(() => {
@@ -320,23 +336,27 @@ const ChessboardGame = () => {
     setGame(newGame);
     setFen(newGame.fen());
     setGameOver(false);
+    // updateGameStatus will be called by useEffect listening to fen
 
     setWhiteTime(initialTimeSetting);
     setBlackTime(initialTimeSetting);
+    // Timer active state will be set after fen update triggers game status update
 
     setMoveFrom('');
     setOptionSquares({});
     setLastMoveSquares({});
-    setTimerResetKey(prev => prev + 1);
+    setTimerResetKey(prev => prev + 1); // Force TimerDisplay to re-initialize
     setCapturedByWhite([]);
     setCapturedByBlack([]);
 
+    // Set board orientation based on player mode
     if (playerMode === 'pvaBlack') {
       setBoardOrientation('black');
     } else {
       setBoardOrientation('white');
     }
-
+    
+    // Set initial timer active state based on whose turn it is
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
@@ -344,27 +364,31 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-  }, [playerMode, initialTimeSetting]);
+  }, [playerMode, initialTimeSetting ]);
+
 
   useEffect(() => {
     resetGame();
   }, [playerMode, initialTimeSetting, resetGame]);
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
-    if (gameOver) return;
+    if (gameOver) return; // Prevent multiple time-up calls
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-  }, [gameOver]);
+  }, [gameOver]); // Added gameOver to dependencies
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
+    // Game will reset via useEffect listening to playerMode
   };
 
   const handleTimerChange = (value: string) => {
     setInitialTimeSetting(parseInt(value, 10));
+    // Game will reset via useEffect listening to initialTimeSetting
   };
+
 
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
@@ -399,7 +423,7 @@ const ChessboardGame = () => {
             initialTime={initialTimeSetting}
             isActive={isBlackTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('black')}
-            key={`black-timer-${timerResetKey}`}
+            key={`black-timer-${timerResetKey}`} // Use resetKey here
           />
         <CapturedPiecesDisplay capturedPieces={capturedByBlack} colorOfCapturedPieces="w" capturerName="Black" />
       </div>
@@ -409,12 +433,12 @@ const ChessboardGame = () => {
           position={fen}
           onPieceDrop={onPieceDrop}
           onSquareClick={onSquareClick}
-          onPromotionPieceSelect={onPromotionPieceSelect}
-          showPromotionDialog={showPromotionDialog}
+          onPromotionPieceSelect={onPromotionPieceSelect} // Pass the handler
+          showPromotionDialog={showPromotionDialog} // Control visibility
           boardOrientation={boardOrientation}
           customBoardStyle={{
-            borderRadius: '0.5rem',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            borderRadius: '0.5rem', // Consistent with ShadCN
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', // Tailwind shadow-xl
           }}
           customDarkSquareStyle={{ backgroundColor: CHESS_BOARD_DARK_COLOR }}
           customLightSquareStyle={{ backgroundColor: CHESS_BOARD_LIGHT_COLOR }}
@@ -422,9 +446,9 @@ const ChessboardGame = () => {
             ...optionSquares,
             ...lastMoveSquares,
           }}
-          promotionDialogVariant="basic"
+          promotionDialogVariant="basic" // Use the built-in basic dialog
           arePiecesDraggable={!gameOver && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
-          id="NextChessboard"
+          id="NextChessboard" // For testing/debugging
         />
       </div>
 
@@ -433,7 +457,7 @@ const ChessboardGame = () => {
             initialTime={initialTimeSetting}
             isActive={isWhiteTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('white')}
-            key={`white-timer-${timerResetKey}`}
+            key={`white-timer-${timerResetKey}`} // Use resetKey here
           />
           <CapturedPiecesDisplay capturedPieces={capturedByWhite} colorOfCapturedPieces="b" capturerName="White" />
       </div>
@@ -442,6 +466,7 @@ const ChessboardGame = () => {
         {gameStatus}
       </div>
 
+      {/* Promotion Dialog (using ShadCN Dialog) */}
       {showPromotionDialog && (
         <Dialog open={showPromotionDialog} onOpenChange={setShowPromotionDialog}>
           <DialogContent>
@@ -457,6 +482,7 @@ const ChessboardGame = () => {
                   onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)}
                   className="w-16 h-16 text-3xl"
                 >
+                  {/* Display common notation (N for Knight) */}
                   {pSymbol === 'n' ? 'N' : pSymbol.toUpperCase()}
                 </Button>
               ))}
@@ -469,4 +495,3 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-
