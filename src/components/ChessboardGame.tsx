@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Chess, Square, PieceSymbol, SQUARES } from 'chess.js';
+import { Chess, Square, PieceSymbol } from 'chess.js';
 import type { ShortMove } from 'chess.js';
 import { useState, useEffect, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
@@ -24,13 +24,13 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from "@/hooks/use-toast";
 
-const INITIAL_TIME_SECONDS = 5 * 60; // 5 minutes
+const DEFAULT_INITIAL_TIME_SECONDS = 5 * 60; // Default 5 minutes
 
 type PlayerMode = 'pvp' | 'pvaWhite' | 'pvaBlack';
 
 const PIECE_UNICODE: Record<'w' | 'b', Record<PieceSymbol, string>> = {
-  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' }, // White pieces
-  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }, // Black pieces
+  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
+  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
 };
 
 interface CapturedPiecesDisplayProps {
@@ -79,30 +79,32 @@ const ChessboardGame = () => {
   const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
   
   const [playerMode, setPlayerMode] = useState<PlayerMode>('pvp');
+  const [initialTimeSetting, setInitialTimeSetting] = useState(DEFAULT_INITIAL_TIME_SECONDS);
+
 
   const [moveFrom, setMoveFrom] = useState<Square | ''>('');
   const [moveTo, setMoveTo] = useState<Square | null>(null);
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
-  const [rightClickedSquares, setRightClickedSquares] = useState<Record<string, React.CSSProperties>>({});
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({});
   const [lastMoveSquares, setLastMoveSquares] = useState<Record<string, React.CSSProperties>>({});
 
-  const [whiteTime, setWhiteTime] = useState(INITIAL_TIME_SECONDS);
-  const [blackTime, setBlackTime] = useState(INITIAL_TIME_SECONDS);
+  const [whiteTime, setWhiteTime] = useState(initialTimeSetting);
+  const [blackTime, setBlackTime] = useState(initialTimeSetting);
   const [isWhiteTimerActive, setIsWhiteTimerActive] = useState(false);
   const [isBlackTimerActive, setIsBlackTimerActive] = useState(false);
   const [gameStatus, setGameStatus] = useState("White to move. Select a mode to start.");
   const [gameOver, setGameOver] = useState(false);
   const [timerResetKey, setTimerResetKey] = useState(0);
 
-  const [capturedByWhite, setCapturedByWhite] = useState<PieceSymbol[]>([]); // Black pieces captured by White
-  const [capturedByBlack, setCapturedByBlack] = useState<PieceSymbol[]>([]); // White pieces captured by Black
+  const [capturedByWhite, setCapturedByWhite] = useState<PieceSymbol[]>([]);
+  const [capturedByBlack, setCapturedByBlack] = useState<PieceSymbol[]>([]);
 
 
-  const CHESS_BOARD_LIGHT_COLOR = '#eeeed2';
-  const CHESS_BOARD_DARK_COLOR = '#769656';
-  const HIGHLIGHT_MOVE_COLOR = '#f6f669';
-  const HIGHLIGHT_LAST_MOVE_COLOR = '#aad751';
+  const CHESS_BOARD_LIGHT_COLOR = 'hsl(var(--chess-board-light))';
+  const CHESS_BOARD_DARK_COLOR = 'hsl(var(--chess-board-dark))';
+  const HIGHLIGHT_MOVE_COLOR = 'hsl(var(--chess-highlight-move))';
+  const HIGHLIGHT_LAST_MOVE_COLOR = 'hsl(var(--chess-highlight-last))';
+
 
   const updateGameStatus = useCallback(() => {
     if (game.isCheckmate()) {
@@ -140,10 +142,6 @@ const ChessboardGame = () => {
   }, []);
 
   const makeMove = useCallback((move: ShortMove | string) => {
-    if (game.isGameOver() && !gameOver) { 
-        toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
-        return false;
-    }
     if (gameOver) { 
       toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
       return false;
@@ -162,9 +160,9 @@ const ChessboardGame = () => {
         setMoveTo(null);
 
         if (result.captured) {
-          if (result.color === 'w') { // White made the move, captured a black piece
+          if (result.color === 'w') { 
             setCapturedByWhite(prev => [...prev, result.captured!]);
-          } else { // Black made the move, captured a white piece
+          } else { 
             setCapturedByBlack(prev => [...prev, result.captured!]);
           }
         }
@@ -179,7 +177,6 @@ const ChessboardGame = () => {
         return true;
       }
     } catch (e) {
-      // toast({ title: "Invalid Move", description: "The attempted move is invalid.", variant: "destructive" });
       return false;
     }
     return false;
@@ -244,7 +241,6 @@ const ChessboardGame = () => {
   
   const onSquareClick = (square: Square) => {
     if (gameOver) return;
-    setRightClickedSquares({});
 
     if (!moveFrom) {
       const pieceOnSquare = game.get(square);
@@ -300,34 +296,36 @@ const ChessboardGame = () => {
     setFen(newGame.fen());
     setGameOver(false);
     
-    setWhiteTime(INITIAL_TIME_SECONDS);
-    setBlackTime(INITIAL_TIME_SECONDS);
+    setWhiteTime(initialTimeSetting);
+    setBlackTime(initialTimeSetting);
+
     setMoveFrom('');
     setOptionSquares({});
     setLastMoveSquares({});
-    setRightClickedSquares({});
     setTimerResetKey(prev => prev + 1);
     setCapturedByWhite([]);
     setCapturedByBlack([]);
 
-    if (playerMode === 'pvp') {
-      setBoardOrientation('white');
-      setIsWhiteTimerActive(true); 
-      setIsBlackTimerActive(false);
-    } else if (playerMode === 'pvaWhite') {
-      setBoardOrientation('white');
-      setIsWhiteTimerActive(true); 
-      setIsBlackTimerActive(false);
-    } else if (playerMode === 'pvaBlack') {
+    if (playerMode === 'pvaBlack') {
       setBoardOrientation('black');
-      setIsWhiteTimerActive(false); 
-      setIsBlackTimerActive(true); 
+    } else {
+      setBoardOrientation('white');
     }
-  }, [playerMode, safeGameMutate]); 
+    
+    // Set initial active timer based on whose turn it is
+    if (newGame.turn() === 'w') {
+      setIsWhiteTimerActive(true); 
+      setIsBlackTimerActive(false);
+    } else {
+      setIsBlackTimerActive(true);
+      setIsWhiteTimerActive(false);
+    }
+
+  }, [playerMode, safeGameMutate, initialTimeSetting, game ]); 
 
   useEffect(() => {
     resetGame();
-  }, [playerMode, resetGame]); 
+  }, [playerMode, initialTimeSetting, resetGame]); 
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
     if (gameOver) return; 
@@ -340,12 +338,16 @@ const ChessboardGame = () => {
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
   };
+
+  const handleTimerChange = (value: string) => {
+    setInitialTimeSetting(parseInt(value, 10));
+  };
   
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
-      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center">
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0 sm:space-x-2">
         <Select value={playerMode} onValueChange={(value) => handleModeChange(value as PlayerMode)}>
-          <SelectTrigger className="w-[180px] bg-card">
+          <SelectTrigger className="w-full sm:w-[180px] bg-card">
             <SelectValue placeholder="Select mode" />
           </SelectTrigger>
           <SelectContent>
@@ -354,12 +356,24 @@ const ChessboardGame = () => {
             <SelectItem value="pvaBlack">Play as Black (vs AI)</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={resetGame} variant="outline">Reset Game</Button>
+        <Select value={String(initialTimeSetting)} onValueChange={handleTimerChange}>
+          <SelectTrigger className="w-full sm:w-[150px] bg-card">
+            <SelectValue placeholder="Timer" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={String(1 * 60)}>1 Minute</SelectItem>
+            <SelectItem value={String(3 * 60)}>3 Minutes</SelectItem>
+            <SelectItem value={String(5 * 60)}>5 Minutes</SelectItem>
+            <SelectItem value={String(10 * 60)}>10 Minutes</SelectItem>
+            <SelectItem value={String(15 * 60)}>15 Minutes</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button onClick={resetGame} variant="outline" className="w-full sm:w-auto">Reset Game</Button>
       </div>
 
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center space-x-2">
         <TimerDisplay
-            initialTime={INITIAL_TIME_SECONDS}
+            initialTime={initialTimeSetting}
             isActive={isBlackTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('black')}
             key={`black-timer-${timerResetKey}`}
@@ -384,7 +398,6 @@ const ChessboardGame = () => {
           customSquareStyles={{
             ...optionSquares,
             ...lastMoveSquares,
-            ...rightClickedSquares,
           }}
           promotionDialogVariant="basic"
           arePiecesDraggable={!gameOver && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
@@ -394,7 +407,7 @@ const ChessboardGame = () => {
 
        <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center space-x-2">
          <TimerDisplay
-            initialTime={INITIAL_TIME_SECONDS}
+            initialTime={initialTimeSetting}
             isActive={isWhiteTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('white')}
             key={`white-timer-${timerResetKey}`}
@@ -433,4 +446,6 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
+    
+
     
