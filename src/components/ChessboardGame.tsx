@@ -164,7 +164,6 @@ const ChessboardGame = () => {
   const HIGHLIGHT_MOVE_COLOR = 'hsl(var(--chess-highlight-move))';
   const HIGHLIGHT_LAST_MOVE_COLOR = 'hsl(var(--chess-highlight-last))';
 
-  // Moved callback definitions earlier to ensure they are initialized before use in useEffect or other callbacks
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
     if (gameOver) return;
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
@@ -187,7 +186,7 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(false);
       setIsWhiteTimerActive(true);
     }
-  }, [gameOver, drawOffer, game, playerMode, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive]);
+  }, [gameOver, drawOffer, game, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
   const handleAcceptDraw = useCallback(() => {
     setGameOver(true);
@@ -262,7 +261,7 @@ const ChessboardGame = () => {
         setWinner(null);
         setDrawType("Stalemate");
         setShowDrawGameDialog(true);
-      } else if (game.isDraw()) {
+      } else if (game.isDraw()) { // Handles other draws like threefold repetition, 50-move rule, insufficient material
         setGameStatus("Draw!");
         setGameOver(true);
         setIsWhiteTimerActive(false);
@@ -307,8 +306,8 @@ const ChessboardGame = () => {
           variant: "destructive"
         });
       } else {
-        setToastMessage({
-          id: `gameOver-${Date.now()}`,
+         setToastMessage({
+          id: `gameOverMoveAttempt-${Date.now()}`,
           title: "Game Over",
           description: "Cannot make moves, the game has ended.",
           variant: "destructive"
@@ -317,22 +316,23 @@ const ChessboardGame = () => {
       return false;
     }
 
-    const gameCopy = new Chess(game.fen());
-    let moveResult;
+    // Validate the move structure and legality on a temporary instance
+    const validationGame = new Chess(game.fen());
+    let preValidationMoveResult;
     try {
-      moveResult = gameCopy.move(move);
+        preValidationMoveResult = validationGame.move(move);
     } catch (e: unknown) {
-      console.error("Error during chess.js game.move:", e instanceof Error ? e.message : String(e));
+      console.error("Error during chess.js pre-validation game.move:", e instanceof Error ? e.message : String(e));
       setToastMessage({
-        id: `moveError-${Date.now()}`,
+        id: `moveError-prevalidation-${Date.now()}`,
         title: "Move Error",
-        description: "An unexpected error occurred while processing the move.",
+        description: "An unexpected error occurred while validating the move format.",
         variant: "destructive"
       });
       return false;
     }
 
-    if (!moveResult) {
+    if (!preValidationMoveResult) {
       setToastMessage({
         id: `illegalMove-${Date.now()}`,
         title: "Illegal Move",
@@ -342,9 +342,26 @@ const ChessboardGame = () => {
       return false;
     }
 
-    setGame(gameCopy);
-    setFen(gameCopy.fen());
-    setMoveHistory(gameCopy.history());
+    const pgn = game.pgn();
+    const nextGameInstance = new Chess();
+    nextGameInstance.load_pgn(pgn); 
+
+    const moveResult = nextGameInstance.move(move); 
+
+    if (!moveResult) {
+        console.error("Error: Move was valid on temp instance but failed on PGN-loaded instance. FEN:", game.fen(), "Move:", move, "PGN:", pgn);
+        setToastMessage({
+            id: `internalMoveError-${Date.now()}`,
+            title: "Internal Error",
+            description: "Move failed unexpectedly after validation. Please reset or try again.",
+            variant: "destructive"
+        });
+        return false;
+    }
+    
+    setGame(nextGameInstance);
+    setFen(nextGameInstance.fen());
+    setMoveHistory(nextGameInstance.history());
 
     setLastMoveSquares({
       [moveResult.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
@@ -355,14 +372,14 @@ const ChessboardGame = () => {
     setMoveTo(null);
 
     if (moveResult.captured) {
-      if (moveResult.color === 'w') {
+      if (moveResult.color === 'w') { // color of the piece that moved
         setCapturedByWhite(prev => [...prev, moveResult.captured!]);
       } else {
         setCapturedByBlack(prev => [...prev, moveResult.captured!]);
       }
     }
 
-    if (gameCopy.turn() === 'w') {
+    if (nextGameInstance.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
     } else {
@@ -371,7 +388,7 @@ const ChessboardGame = () => {
     }
     return true;
   }, [
-    game,
+    game, 
     gameOver,
     drawOffer,
     HIGHLIGHT_LAST_MOVE_COLOR,
@@ -451,28 +468,31 @@ const ChessboardGame = () => {
 
   useEffect(() => {
     updateGameStatus();
-  }, [fen, updateGameStatus, drawOffer]);
+  }, [fen, updateGameStatus, drawOffer]); // fen dependency ensures status updates after a move
 
   useEffect(() => {
-    if (gameOver || drawOffer) return;
+    if (gameOver || drawOffer) return; // Don't make AI moves if game over or draw offer pending
     const isAITurn =
       (playerMode === 'pvaWhite' && game.turn() === 'b') ||
       (playerMode === 'pvaBlack' && game.turn() === 'w');
 
     if (isAITurn) {
+      // AI response to a draw offer
       if (drawOffer && ((playerMode === 'pvaWhite' && drawOffer === 'w') || (playerMode === 'pvaBlack' && drawOffer === 'b'))) {
+        // AI logic for responding to draw offer (e.g., always reject for simplicity here)
         const aiRejectTimeout = setTimeout(() => {
           handleRejectDraw(); 
-        }, 1000); 
+        }, 1000); // AI "thinks" for a second
         return () => clearTimeout(aiRejectTimeout);
       } else {
+        // AI makes a regular move
         const timeoutId = setTimeout(() => {
           makeRandomMove();
-        }, 500);
+        }, 500); // AI "thinks" for half a second
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer, handleRejectDraw]);
+  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer, handleRejectDraw]); // fen ensures this runs after AI's turn is due
   
   useEffect(() => {
     resetGame();
@@ -485,28 +505,32 @@ const ChessboardGame = () => {
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
 
+    // Prevent player from moving opponent's pieces or AI's pieces
     if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
-      return false;
+      return false; // AI's turn, human cannot move
     }
-
-    if (gameTurn !== movingPieceColor) {
+    if (gameTurn !== movingPieceColor) { // Trying to move opponent's piece in PvP
         return false;
     }
 
-    const tempGame = new Chess(game.fen());
+    // Check for promotion
+    const tempGame = new Chess(game.fen()); // Use a temporary game to check move details
     const moveDetails = tempGame.moves({ square: sourceSquare, verbose: true })
                          .find(m => m.to === targetSquare);
     
     if (moveDetails?.flags.includes('p') && (targetSquare.endsWith('8') || targetSquare.endsWith('1'))) {
+      // This is a pawn promotion move
       setMoveFrom(sourceSquare);
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false; 
+      return false; // Let react-chessboard handle the promotion dialog
     }
 
+    // Regular move
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
+      // No promotion property for non-pawn-promotion moves
     };
     
     const moveSuccessful = makeMove(gameMove);
@@ -516,28 +540,30 @@ const ChessboardGame = () => {
   const onSquareClick = (square: Square) => {
     if (gameOver || drawOffer) return;
 
-    if (!moveFrom) {
+    // Prevent clicks if it's AI's turn
+    if ((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w')) {
+      return;
+    }
+
+    if (!moveFrom) { // First click (selecting a piece)
       const pieceOnSquare = game.get(square);
       if (pieceOnSquare && pieceOnSquare.color === game.turn()) {
-         if ((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w')) {
-          return;
-        }
         setMoveFrom(square);
         const moves = game.moves({ square, verbose: true });
         const newOptionSquares: Record<string, React.CSSProperties> = {};
         moves.forEach(move => {
           newOptionSquares[move.to] = {
             background: game.get(move.to) && game.get(move.to)?.color !== game.turn()
-              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`
-              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`,
+              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)` // Capture
+              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`, // Move to empty
             borderRadius: '50%',
           };
         });
-        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR };
+        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR }; // Highlight selected piece
         setOptionSquares(newOptionSquares);
       }
-    } else {
-      if (square === moveFrom) { 
+    } else { // Second click (moving the piece or deselecting)
+      if (square === moveFrom) { // Clicked the same square again (deselect)
         setMoveFrom('');
         setOptionSquares({});
         return;
@@ -546,13 +572,15 @@ const ChessboardGame = () => {
       const pieceToMove = game.get(moveFrom);
       if (pieceToMove) {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
-        const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
-        if (!moveSuccessful && !showPromotionDialog) { 
-          setMoveFrom(''); 
+        const moveSuccessful = onPieceDrop(moveFrom, square, pieceString); // Use onPieceDrop logic for consistency
+        
+        if (!moveSuccessful && !showPromotionDialog) { // If move failed and not due to promotion dialog
+          setMoveFrom(''); // Reset selection
           setOptionSquares({});
         }
+        // If showPromotionDialog became true, onPieceDrop returned false, so keep moveFrom for onPromotionPieceSelect
       } else {
-         setMoveFrom(''); 
+         setMoveFrom(''); // Should not happen if moveFrom is valid
          setOptionSquares({});
       }
     }
@@ -560,22 +588,24 @@ const ChessboardGame = () => {
 
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
     if (piece && moveFrom && moveTo) {
-      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol;
+      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol; // e.g., 'wq' -> 'q'
       makeMove({ from: moveFrom, to: moveTo, promotion: promotionSymbol });
     }
     setShowPromotionDialog(false);
     setMoveFrom('');
     setMoveTo(null);
-    setOptionSquares({});
-    return true;
+    setOptionSquares({}); // Clear highlights after promotion
+    return true; // Important for react-chessboard
   };
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
+    // Game will be reset by useEffect watching playerMode
   };
 
   const handleTimerChange = (value: string) => {
     setInitialTimeSetting(parseInt(value, 10));
+    // Game will be reset by useEffect watching initialTimeSetting
   };
 
   const canOfferDraw = !gameOver && !drawOffer &&
@@ -801,3 +831,4 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
+
