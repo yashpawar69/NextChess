@@ -24,6 +24,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from "@/hooks/use-toast";
 import { Crown, Swords, ThumbsDown, Handshake, Flag } from 'lucide-react';
 
@@ -81,6 +83,45 @@ interface ToastMessage {
   variant: 'default' | 'destructive';
 }
 
+interface MoveHistoryDisplayProps {
+  history: string[];
+}
+
+const MoveHistoryDisplay: React.FC<MoveHistoryDisplayProps> = ({ history }) => {
+  if (history.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground p-4 text-center">
+        No moves yet.
+      </div>
+    );
+  }
+
+  const formattedMoves: { number: number; white?: string; black?: string }[] = [];
+  for (let i = 0; i < history.length; i += 2) {
+    formattedMoves.push({
+      number: Math.floor(i / 2) + 1,
+      white: history[i],
+      black: history[i + 1] || undefined,
+    });
+  }
+
+  return (
+    <ScrollArea className="h-48 w-full rounded-md border bg-card text-card-foreground shadow">
+      <div className="p-4 space-y-1">
+        {formattedMoves.map((movePair) => (
+          <div key={movePair.number} className="flex text-sm items-baseline font-mono">
+            <span className="w-7 text-right font-medium text-muted-foreground pr-1.5 tabular-nums">{movePair.number}.</span>
+            <span className="w-20 min-w-0 truncate px-1">{movePair.white}</span>
+            {movePair.black && <span className="w-20 min-w-0 truncate px-1">{movePair.black}</span>}
+            {!movePair.black && <span className="w-20 min-w-0 px-1"></span>}
+          </div>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+};
+
+
 const ChessboardGame = () => {
   const { toast } = useToast();
   const [game, setGame] = useState(new Chess());
@@ -106,6 +147,7 @@ const ChessboardGame = () => {
 
   const [capturedByWhite, setCapturedByWhite] = useState<PieceSymbol[]>([]);
   const [capturedByBlack, setCapturedByBlack] = useState<PieceSymbol[]>([]);
+  const [moveHistory, setMoveHistory] = useState<string[]>([]);
 
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
 
@@ -117,24 +159,73 @@ const ChessboardGame = () => {
   const [showDrawGameDialog, setShowDrawGameDialog] = useState(false);
   const [drawType, setDrawType] = useState<string | null>(null);
 
-
-  useEffect(() => {
-    if (toastMessage) {
-      toast({
-        title: toastMessage.title,
-        description: toastMessage.description,
-        variant: toastMessage.variant,
-      });
-      setToastMessage(null);
-    }
-  }, [toastMessage, toast]);
-
-
   const CHESS_BOARD_LIGHT_COLOR = 'hsl(var(--chess-board-light))';
   const CHESS_BOARD_DARK_COLOR = 'hsl(var(--chess-board-dark))';
   const HIGHLIGHT_MOVE_COLOR = 'hsl(var(--chess-highlight-move))';
   const HIGHLIGHT_LAST_MOVE_COLOR = 'hsl(var(--chess-highlight-last))';
 
+  // Moved callback definitions earlier to ensure they are initialized before use in useEffect or other callbacks
+  const handleTimeUp = useCallback((player: 'white' | 'black') => {
+    if (gameOver) return;
+    setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
+    setGameOver(true);
+    setIsWhiteTimerActive(false);
+    setIsBlackTimerActive(false);
+    setWinner(player === 'white' ? 'b' : 'w');
+    setShowCheckmateDialog(true);
+  }, [gameOver]);
+
+  const handleOfferDraw = useCallback(() => {
+    if (gameOver || drawOffer) return;
+    const offeringPlayerColor = game.turn();
+    setDrawOffer(offeringPlayerColor);
+    
+    if (offeringPlayerColor === 'w') {
+      setIsWhiteTimerActive(false);
+      setIsBlackTimerActive(true);
+    } else {
+      setIsBlackTimerActive(false);
+      setIsWhiteTimerActive(true);
+    }
+  }, [gameOver, drawOffer, game, playerMode, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive]);
+
+  const handleAcceptDraw = useCallback(() => {
+    setGameOver(true);
+    setGameStatus("Game drawn by agreement.");
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+    setDrawType("Agreement");
+    setShowDrawGameDialog(true);
+    setIsWhiteTimerActive(false);
+    setIsBlackTimerActive(false);
+  }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
+
+  const handleRejectDraw = useCallback(() => {
+    const offeringPlayer = drawOffer;
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+
+    if (offeringPlayer === 'w') { 
+      setIsBlackTimerActive(true);
+      setIsWhiteTimerActive(false);
+    } else { 
+      setIsWhiteTimerActive(true);
+      setIsBlackTimerActive(false);
+    }
+  }, [drawOffer, setDrawOffer, setShowDrawOfferDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
+
+  const handleResign = useCallback(() => {
+    if (gameOver || drawOffer) return;
+    const resigningPlayer = game.turn();
+    const winningPlayer = resigningPlayer === 'w' ? 'b' : 'w';
+
+    setGameOver(true);
+    setWinner(winningPlayer);
+    setGameStatus(`${resigningPlayer === 'w' ? 'White' : 'Black'} resigned. ${winningPlayer === 'w' ? 'White' : 'Black'} wins.`);
+    setShowCheckmateDialog(true); 
+    setIsWhiteTimerActive(false);
+    setIsBlackTimerActive(false);
+  }, [gameOver, drawOffer, game, setGameOver, setWinner, setGameStatus, setShowCheckmateDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
   const updateGameStatus = useCallback(() => {
     try {
@@ -142,20 +233,15 @@ const ChessboardGame = () => {
         const offeringPlayer = drawOffer === 'w' ? 'White' : 'Black';
         const respondingPlayer = drawOffer === 'w' ? 'Black' : 'White';
         setGameStatus(`${offeringPlayer} offered a draw. ${respondingPlayer} to respond.`);
-        // Show dialog for the responding player
+        
         if ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w')) {
            const humanPlayerIsResponding =
              (playerMode === 'pvp') ||
-             (playerMode === 'pvaWhite' && drawOffer === 'b') ||
-             (playerMode === 'pvaBlack' && drawOffer === 'w');
+             (playerMode === 'pvaWhite' && drawOffer === 'b') || 
+             (playerMode === 'pvaBlack' && drawOffer === 'w'); 
 
-           if (humanPlayerIsResponding && ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w'))) {
-              if ( (playerMode === 'pvaWhite' && game.turn() === 'b' && drawOffer === 'b') ||
-                   (playerMode === 'pvaBlack' && game.turn() === 'w' && drawOffer === 'w') ) {
-                 setShowDrawOfferDialog(true);
-              } else if (playerMode === 'pvp' && ((game.turn() === 'b' && drawOffer === 'w') || (game.turn() === 'w' && drawOffer === 'b'))) {
-                 setShowDrawOfferDialog(true);
-              }
+           if (humanPlayerIsResponding) {
+              setShowDrawOfferDialog(true);
            }
         }
         return;
@@ -209,13 +295,9 @@ const ChessboardGame = () => {
         variant: "destructive"
       });
     }
-  }, [game, drawOffer, playerMode, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setWinner, setShowCheckmateDialog, setDrawType, setShowDrawGameDialog, setShowDrawOfferDialog, setToastMessage]);
+  }, [game, drawOffer, playerMode, setToastMessage]);
 
-  useEffect(() => {
-    updateGameStatus();
-  }, [fen, updateGameStatus, drawOffer]);
-
- const makeMove = useCallback((move: ShortMove | string) => {
+  const makeMove = useCallback((move: ShortMove | string) => {
     if (gameOver || drawOffer) {
       if (drawOffer) {
         setToastMessage({
@@ -262,6 +344,7 @@ const ChessboardGame = () => {
 
     setGame(gameCopy);
     setFen(gameCopy.fen());
+    setMoveHistory(gameCopy.history());
 
     setLastMoveSquares({
       [moveResult.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
@@ -295,6 +378,7 @@ const ChessboardGame = () => {
     setToastMessage,
     setGame,
     setFen,
+    setMoveHistory,
     setLastMoveSquares,
     setOptionSquares,
     setMoveFrom,
@@ -304,8 +388,7 @@ const ChessboardGame = () => {
     setIsWhiteTimerActive,
     setIsBlackTimerActive,
   ]);
-
-
+  
   const makeRandomMove = useCallback(() => {
     if (game.isGameOver() || gameOver || drawOffer) return;
     const possibleMoves = game.moves({ verbose: true });
@@ -315,6 +398,61 @@ const ChessboardGame = () => {
     makeMove({ from: randomMove.from, to: randomMove.to, promotion: randomMove.promotion });
   }, [game, makeMove, gameOver, drawOffer]);
 
+  const resetGame = useCallback(() => {
+    const newGame = new Chess();
+    setGame(newGame);
+    setFen(newGame.fen());
+    setMoveHistory([]);
+    setGameOver(false);
+
+    setWhiteTime(initialTimeSetting);
+    setBlackTime(initialTimeSetting);
+
+    setMoveFrom('');
+    setOptionSquares({});
+    setLastMoveSquares({});
+    setTimerResetKey(prev => prev + 1);
+    setCapturedByWhite([]);
+    setCapturedByBlack([]);
+    setShowCheckmateDialog(false);
+    setWinner(null);
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+    setShowDrawGameDialog(false);
+    setDrawType(null);
+
+    if (playerMode === 'pvaBlack') {
+      setBoardOrientation('black');
+    } else {
+      setBoardOrientation('white');
+    }
+
+    if (newGame.turn() === 'w') {
+      setIsWhiteTimerActive(true);
+      setIsBlackTimerActive(false);
+    } else {
+      setIsBlackTimerActive(true);
+      setIsWhiteTimerActive(false);
+    }
+    // updateGameStatus will be called by useEffect on fen change
+  }, [playerMode, initialTimeSetting]);
+
+
+  useEffect(() => {
+    if (toastMessage) {
+      toast({
+        title: toastMessage.title,
+        description: toastMessage.description,
+        variant: toastMessage.variant,
+      });
+      setToastMessage(null);
+    }
+  }, [toastMessage, toast]);
+
+  useEffect(() => {
+    updateGameStatus();
+  }, [fen, updateGameStatus, drawOffer]);
+
   useEffect(() => {
     if (gameOver || drawOffer) return;
     const isAITurn =
@@ -322,12 +460,24 @@ const ChessboardGame = () => {
       (playerMode === 'pvaBlack' && game.turn() === 'w');
 
     if (isAITurn) {
-      const timeoutId = setTimeout(() => {
-        makeRandomMove();
-      }, 500);
-      return () => clearTimeout(timeoutId);
+      if (drawOffer && ((playerMode === 'pvaWhite' && drawOffer === 'w') || (playerMode === 'pvaBlack' && drawOffer === 'b'))) {
+        const aiRejectTimeout = setTimeout(() => {
+          handleRejectDraw(); 
+        }, 1000); 
+        return () => clearTimeout(aiRejectTimeout);
+      } else {
+        const timeoutId = setTimeout(() => {
+          makeRandomMove();
+        }, 500);
+        return () => clearTimeout(timeoutId);
+      }
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer]);
+  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer, handleRejectDraw]);
+  
+  useEffect(() => {
+    resetGame();
+  }, [playerMode, initialTimeSetting, resetGame]);
+
 
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
     if (gameOver || drawOffer) return false;
@@ -346,19 +496,19 @@ const ChessboardGame = () => {
     const tempGame = new Chess(game.fen());
     const moveDetails = tempGame.moves({ square: sourceSquare, verbose: true })
                          .find(m => m.to === targetSquare);
-
+    
     if (moveDetails?.flags.includes('p') && (targetSquare.endsWith('8') || targetSquare.endsWith('1'))) {
       setMoveFrom(sourceSquare);
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false;
+      return false; 
     }
 
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
     };
-
+    
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
@@ -387,7 +537,7 @@ const ChessboardGame = () => {
         setOptionSquares(newOptionSquares);
       }
     } else {
-      if (square === moveFrom) {
+      if (square === moveFrom) { 
         setMoveFrom('');
         setOptionSquares({});
         return;
@@ -397,12 +547,12 @@ const ChessboardGame = () => {
       if (pieceToMove) {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
         const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
-        if (!moveSuccessful && !showPromotionDialog) {
-          setMoveFrom('');
+        if (!moveSuccessful && !showPromotionDialog) { 
+          setMoveFrom(''); 
           setOptionSquares({});
         }
       } else {
-         setMoveFrom('');
+         setMoveFrom(''); 
          setOptionSquares({});
       }
     }
@@ -420,60 +570,6 @@ const ChessboardGame = () => {
     return true;
   };
 
-  const resetGame = useCallback(() => {
-    const newGame = new Chess();
-    setGame(newGame);
-    setFen(newGame.fen());
-    setGameOver(false);
-
-    setWhiteTime(initialTimeSetting);
-    setBlackTime(initialTimeSetting);
-
-    setMoveFrom('');
-    setOptionSquares({});
-    setLastMoveSquares({});
-    setTimerResetKey(prev => prev + 1);
-    setCapturedByWhite([]);
-    setCapturedByBlack([]);
-    setShowCheckmateDialog(false);
-    setWinner(null);
-    setDrawOffer(null);
-    setShowDrawOfferDialog(false);
-    setShowDrawGameDialog(false);
-    setDrawType(null);
-
-
-    if (playerMode === 'pvaBlack') {
-      setBoardOrientation('black');
-    } else {
-      setBoardOrientation('white');
-    }
-
-    if (newGame.turn() === 'w') {
-      setIsWhiteTimerActive(true);
-      setIsBlackTimerActive(false);
-    } else {
-      setIsBlackTimerActive(true);
-      setIsWhiteTimerActive(false);
-    }
-    // No direct call to updateGameStatus here, useEffect [fen] will handle it
-  }, [playerMode, initialTimeSetting, setGame, setFen, setGameOver, setWhiteTime, setBlackTime, setMoveFrom, setOptionSquares, setLastMoveSquares, setTimerResetKey, setCapturedByWhite, setCapturedByBlack, setShowCheckmateDialog, setWinner, setDrawOffer, setShowDrawOfferDialog, setShowDrawGameDialog, setDrawType, setBoardOrientation, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
-
-  useEffect(() => {
-    resetGame();
-  }, [playerMode, initialTimeSetting, resetGame]);
-
-  const handleTimeUp = useCallback((player: 'white' | 'black') => {
-    if (gameOver) return;
-    setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
-    setGameOver(true);
-    setIsWhiteTimerActive(false);
-    setIsBlackTimerActive(false);
-    setWinner(player === 'white' ? 'b' : 'w');
-    setShowCheckmateDialog(true);
-  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setWinner, setShowCheckmateDialog]);
-
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
   };
@@ -481,59 +577,6 @@ const ChessboardGame = () => {
   const handleTimerChange = (value: string) => {
     setInitialTimeSetting(parseInt(value, 10));
   };
-
-  const handleOfferDraw = useCallback(() => {
-    if (gameOver || drawOffer) return;
-    const offeringPlayerColor = game.turn();
-    setDrawOffer(offeringPlayerColor);
-
-    if (offeringPlayerColor === 'w') {
-      setIsWhiteTimerActive(false);
-      setIsBlackTimerActive(true);
-    } else {
-      setIsBlackTimerActive(false);
-      setIsWhiteTimerActive(true);
-    }
-  }, [gameOver, drawOffer, game, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
-  const handleAcceptDraw = useCallback(() => {
-    setGameOver(true);
-    setGameStatus("Game drawn by agreement.");
-    setDrawOffer(null);
-    setShowDrawOfferDialog(false);
-    setDrawType("Agreement");
-    setShowDrawGameDialog(true);
-    setIsWhiteTimerActive(false);
-    setIsBlackTimerActive(false);
-  }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
-  const handleRejectDraw = useCallback(() => {
-    const offeringPlayer = drawOffer;
-    setDrawOffer(null);
-    setShowDrawOfferDialog(false);
-
-    if (offeringPlayer === 'w') {
-      setIsBlackTimerActive(true);
-      setIsWhiteTimerActive(false);
-    } else {
-      setIsWhiteTimerActive(true);
-      setIsBlackTimerActive(false);
-    }
-  }, [drawOffer, setDrawOffer, setShowDrawOfferDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
-  const handleResign = useCallback(() => {
-    if (gameOver || drawOffer) return;
-    const resigningPlayer = game.turn();
-    const winningPlayer = resigningPlayer === 'w' ? 'b' : 'w';
-
-    setGameOver(true);
-    setWinner(winningPlayer);
-    setGameStatus(`${resigningPlayer === 'w' ? 'White' : 'Black'} resigned. ${winningPlayer === 'w' ? 'White' : 'Black'} wins.`);
-    setShowCheckmateDialog(true); // Reuse checkmate dialog for resignation display
-    setIsWhiteTimerActive(false);
-    setIsBlackTimerActive(false);
-  }, [gameOver, drawOffer, game, setGameOver, setWinner, setGameStatus, setShowCheckmateDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
 
   const canOfferDraw = !gameOver && !drawOffer &&
     (playerMode === 'pvp' ||
@@ -631,6 +674,18 @@ const ChessboardGame = () => {
       <div className="text-center text-lg font-medium p-2 rounded-md bg-card text-card-foreground shadow w-full max-w-md md:max-w-lg lg:max-w-xl">
         {gameStatus}
       </div>
+
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl mt-4">
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-lg text-center">Move History</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <MoveHistoryDisplay history={moveHistory} />
+          </CardContent>
+        </Card>
+      </div>
+
 
       {showPromotionDialog && (
         <Dialog open={showPromotionDialog} onOpenChange={setShowPromotionDialog}>
@@ -746,5 +801,3 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-
-    
