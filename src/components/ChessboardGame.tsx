@@ -141,44 +141,71 @@ const ChessboardGame = () => {
     });
   }, []);
 
-  const makeMove = useCallback((move: ShortMove | string) => {
+ const makeMove = useCallback((move: ShortMove | string) => {
     if (gameOver) {
       toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
       return false;
     }
 
-    let moveResult = false;
+    let localMoveSuccessful = false; 
+
     safeGameMutate(g => {
+      try {
         const result = g.move(move);
         if (result) {
-            setLastMoveSquares({
+          setLastMoveSquares({
             [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
             [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
-            });
-            setOptionSquares({});
-            setMoveFrom('');
-            setMoveTo(null);
+          });
+          setOptionSquares({});
+          setMoveFrom('');
+          setMoveTo(null);
 
-            if (result.captured) {
-            if (result.color === 'w') {
-                setCapturedByWhite(prev => [...prev, result.captured!]);
-            } else {
-                setCapturedByBlack(prev => [...prev, result.captured!]);
+          if (result.captured) {
+            if (result.color === 'w') { 
+              setCapturedByWhite(prev => [...prev, result.captured!]);
+            } else { 
+              setCapturedByBlack(prev => [...prev, result.captured!]);
             }
-            }
+          }
 
-            if (g.turn() === 'w') {
+          if (g.turn() === 'w') {
             setIsWhiteTimerActive(true);
             setIsBlackTimerActive(false);
-            } else {
+          } else {
             setIsBlackTimerActive(true);
             setIsWhiteTimerActive(false);
-            }
-            moveResult = true;
+          }
+          localMoveSuccessful = true;
+        } else {
+          localMoveSuccessful = false;
         }
+      } catch (e) {
+        console.error("Error during game.move:", e);
+        toast({
+          title: "Invalid Move Attempt",
+          description: "The attempted move was not valid.",
+          variant: "destructive",
+        });
+        localMoveSuccessful = false;
+      }
     });
-    return moveResult;
-  }, [gameOver, safeGameMutate, toast, HIGHLIGHT_LAST_MOVE_COLOR]);
+
+    return localMoveSuccessful;
+  }, [
+    gameOver, 
+    safeGameMutate, 
+    toast, 
+    HIGHLIGHT_LAST_MOVE_COLOR, 
+    setCapturedByWhite, 
+    setCapturedByBlack, 
+    setIsWhiteTimerActive, 
+    setIsBlackTimerActive,
+    setLastMoveSquares,
+    setOptionSquares,
+    setMoveFrom,
+    setMoveTo
+  ]);
 
 
   const makeRandomMove = useCallback(() => {
@@ -209,11 +236,11 @@ const ChessboardGame = () => {
 
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
-
+    
     if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
-      return false;
+      return false; 
     }
-
+    
     if (gameTurn !== movingPieceColor) {
         return false;
     }
@@ -442,3 +469,4 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
+
