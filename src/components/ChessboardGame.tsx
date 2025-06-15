@@ -28,6 +28,50 @@ const INITIAL_TIME_SECONDS = 5 * 60; // 5 minutes
 
 type PlayerMode = 'pvp' | 'pvaWhite' | 'pvaBlack';
 
+const PIECE_UNICODE: Record<'w' | 'b', Record<PieceSymbol, string>> = {
+  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' }, // White pieces
+  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }, // Black pieces
+};
+
+interface CapturedPiecesDisplayProps {
+  capturedPieces: PieceSymbol[]; 
+  colorOfCapturedPieces: 'w' | 'b'; 
+  capturerName: string; 
+}
+
+const CapturedPiecesDisplay: React.FC<CapturedPiecesDisplayProps> = ({ capturedPieces, colorOfCapturedPieces, capturerName }) => {
+  if (capturedPieces.length === 0) {
+    return (
+      <div className="p-2 bg-card rounded-md shadow flex flex-col items-center justify-center min-h-[60px] flex-1 text-xs text-muted-foreground">
+        No pieces captured by {capturerName}
+      </div>
+    );
+  }
+
+  const pieceOrderValue: Record<PieceSymbol, number> = { q: 5, r: 4, b: 3, n: 2, p: 1, k: 0 };
+  const sortedPieces = [...capturedPieces].sort((a, b) => {
+    return pieceOrderValue[b] - pieceOrderValue[a]; 
+  });
+
+  return (
+    <div className="p-2 bg-card rounded-md shadow flex flex-col items-start min-h-[60px] flex-1">
+      <div className="text-xs text-muted-foreground mb-1 self-center">Captured by {capturerName}:</div>
+      <div className="flex flex-wrap gap-x-1 gap-y-0 leading-none">
+        {sortedPieces.map((pieceType, index) => (
+          <span 
+            key={index} 
+            className="text-xl" 
+            title={`${colorOfCapturedPieces === 'w' ? 'White' : 'Black'} ${pieceType.toUpperCase()}`}
+          >
+            {PIECE_UNICODE[colorOfCapturedPieces][pieceType]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
 const ChessboardGame = () => {
   const { toast } = useToast();
   const [game, setGame] = useState(new Chess());
@@ -50,6 +94,10 @@ const ChessboardGame = () => {
   const [gameStatus, setGameStatus] = useState("White to move. Select a mode to start.");
   const [gameOver, setGameOver] = useState(false);
   const [timerResetKey, setTimerResetKey] = useState(0);
+
+  const [capturedByWhite, setCapturedByWhite] = useState<PieceSymbol[]>([]); // Black pieces captured by White
+  const [capturedByBlack, setCapturedByBlack] = useState<PieceSymbol[]>([]); // White pieces captured by Black
+
 
   const CHESS_BOARD_LIGHT_COLOR = '#eeeed2';
   const CHESS_BOARD_DARK_COLOR = '#769656';
@@ -92,11 +140,11 @@ const ChessboardGame = () => {
   }, []);
 
   const makeMove = useCallback((move: ShortMove | string) => {
-    if (game.isGameOver() && !gameOver) { // Check if game instance is over but state not yet updated
+    if (game.isGameOver() && !gameOver) { 
         toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
         return false;
     }
-    if (gameOver) { // Check already updated gameOver state
+    if (gameOver) { 
       toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
       return false;
     }
@@ -112,6 +160,14 @@ const ChessboardGame = () => {
         setOptionSquares({});
         setMoveFrom('');
         setMoveTo(null);
+
+        if (result.captured) {
+          if (result.color === 'w') { // White made the move, captured a black piece
+            setCapturedByWhite(prev => [...prev, result.captured!]);
+          } else { // Black made the move, captured a white piece
+            setCapturedByBlack(prev => [...prev, result.captured!]);
+          }
+        }
         
         if (game.turn() === 'w') {
           setIsWhiteTimerActive(true);
@@ -123,11 +179,11 @@ const ChessboardGame = () => {
         return true;
       }
     } catch (e) {
-      toast({ title: "Invalid Move", description: "The attempted move is invalid.", variant: "destructive" });
+      // toast({ title: "Invalid Move", description: "The attempted move is invalid.", variant: "destructive" });
       return false;
     }
     return false;
-  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR, gameOver]);
+  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR, gameOver, safeGameMutate]);
 
 
   const makeRandomMove = useCallback(() => {
@@ -156,25 +212,21 @@ const ChessboardGame = () => {
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
     if (gameOver) return false;
     
-    const gameTurn = game.turn(); // 'w' or 'b'
-    const movingPieceColor = piece.charAt(0); // 'w' or 'b'
+    const gameTurn = game.turn();
+    const movingPieceColor = piece.charAt(0);
 
-    // Prevent human interaction if it's AI's turn in Player vs AI modes
     if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
       return false; 
     }
-
-    // Prevent moving a piece of the wrong color for the current turn.
-    // This applies to PvP and the human's turn in PvA.
+    
     if (gameTurn !== movingPieceColor) {
         return false;
     }
 
-    // Check for promotion
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      promotion: 'q', // Default promotion
+      promotion: 'q', 
     };
 
     const foundMove = game.moves({ verbose: true }).find(m => m.from === sourceSquare && m.to === targetSquare);
@@ -232,7 +284,6 @@ const ChessboardGame = () => {
   
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
     if (piece && moveFrom && moveTo) {
-      // Ensure promotion piece symbol is just the type (q, r, b, n)
       const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol;
       makeMove({ from: moveFrom, to: moveTo, promotion: promotionSymbol });
     }
@@ -245,8 +296,8 @@ const ChessboardGame = () => {
 
   const resetGame = useCallback(() => {
     const newGame = new Chess();
-    setGame(newGame); // Set new game instance
-    setFen(newGame.fen()); // Set fen from new game instance
+    setGame(newGame);
+    setFen(newGame.fen());
     setGameOver(false);
     
     setWhiteTime(INITIAL_TIME_SECONDS);
@@ -256,31 +307,30 @@ const ChessboardGame = () => {
     setLastMoveSquares({});
     setRightClickedSquares({});
     setTimerResetKey(prev => prev + 1);
+    setCapturedByWhite([]);
+    setCapturedByBlack([]);
 
     if (playerMode === 'pvp') {
       setBoardOrientation('white');
-      setIsWhiteTimerActive(true); // White starts in PvP
+      setIsWhiteTimerActive(true); 
       setIsBlackTimerActive(false);
     } else if (playerMode === 'pvaWhite') {
       setBoardOrientation('white');
-      setIsWhiteTimerActive(true); // Human (White) starts
+      setIsWhiteTimerActive(true); 
       setIsBlackTimerActive(false);
     } else if (playerMode === 'pvaBlack') {
       setBoardOrientation('black');
       setIsWhiteTimerActive(false); 
-      setIsBlackTimerActive(true); // Human (Black) effectively starts if AI is white and moves first
-                                  // Or, if AI is white and doesn't move first, black timer starts.
-                                  // Let's assume AI (white) makes the first move if pvaBlack.
+      setIsBlackTimerActive(true); 
     }
-     // updateGameStatus will be called by useEffect listening to fen
-  }, [playerMode, safeGameMutate]); // safeGameMutate is stable if its deps are stable
+  }, [playerMode, safeGameMutate]); 
 
   useEffect(() => {
     resetGame();
   }, [playerMode, resetGame]); 
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
-    if (gameOver) return; // Prevent multiple calls if already game over
+    if (gameOver) return; 
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
     setGameOver(true);
     setIsWhiteTimerActive(false);
@@ -289,7 +339,6 @@ const ChessboardGame = () => {
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
-    // resetGame will be called by the useEffect watching playerMode
   };
   
   return (
@@ -305,19 +354,17 @@ const ChessboardGame = () => {
             <SelectItem value="pvaBlack">Play as Black (vs AI)</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={() => {
-          resetGame(); // Call resetGame directly
-          // updateGameStatus will be triggered by fen change in resetGame
-        }} variant="outline">Reset Game</Button>
+        <Button onClick={resetGame} variant="outline">Reset Game</Button>
       </div>
 
-      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center space-x-2">
         <TimerDisplay
             initialTime={INITIAL_TIME_SECONDS}
             isActive={isBlackTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('black')}
             key={`black-timer-${timerResetKey}`}
           />
+        <CapturedPiecesDisplay capturedPieces={capturedByBlack} colorOfCapturedPieces="w" capturerName="Black" />
       </div>
       
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl shadow-2xl rounded-lg overflow-hidden">
@@ -345,13 +392,14 @@ const ChessboardGame = () => {
         />
       </div>
 
-       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
+       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center space-x-2">
          <TimerDisplay
             initialTime={INITIAL_TIME_SECONDS}
             isActive={isWhiteTimerActive && !gameOver}
             onTimeUp={() => handleTimeUp('white')}
             key={`white-timer-${timerResetKey}`}
           />
+          <CapturedPiecesDisplay capturedPieces={capturedByWhite} colorOfCapturedPieces="b" capturerName="White" />
       </div>
 
       <div className="text-center text-lg font-medium p-2 rounded-md bg-card text-card-foreground shadow w-full max-w-md md:max-w-lg lg:max-w-xl">
@@ -371,9 +419,8 @@ const ChessboardGame = () => {
                   key={pSymbol} 
                   variant="outline" 
                   onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)} 
-                  className="w-16 h-16 text-3xl" // Increased text size for better visibility of piece symbols
+                  className="w-16 h-16 text-3xl"
                 >
-                  {/* Display standard algebraic notation for pieces */}
                   {pSymbol === 'n' ? 'N' : pSymbol.toUpperCase()}
                 </Button>
               ))}
@@ -386,5 +433,4 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-
     
