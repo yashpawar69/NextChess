@@ -21,8 +21,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
+import { Crown, Swords, ThumbsDown } from 'lucide-react';
 
 const DEFAULT_INITIAL_TIME_SECONDS = 5 * 60; // Default 5 minutes
 
@@ -87,7 +90,6 @@ const ChessboardGame = () => {
   const [playerMode, setPlayerMode] = useState<PlayerMode>('pvp');
   const [initialTimeSetting, setInitialTimeSetting] = useState(DEFAULT_INITIAL_TIME_SECONDS);
 
-
   const [moveFrom, setMoveFrom] = useState<Square | ''>('');
   const [moveTo, setMoveTo] = useState<Square | null>(null);
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
@@ -107,6 +109,10 @@ const ChessboardGame = () => {
 
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
 
+  const [showCheckmateDialog, setShowCheckmateDialog] = useState(false);
+  const [winner, setWinner] = useState<'w' | 'b' | null>(null);
+
+
   useEffect(() => {
     if (toastMessage) {
       toast({
@@ -114,7 +120,7 @@ const ChessboardGame = () => {
         description: toastMessage.description,
         variant: toastMessage.variant,
       });
-      setToastMessage(null); // Reset after showing
+      setToastMessage(null); 
     }
   }, [toastMessage, toast]);
 
@@ -132,19 +138,27 @@ const ChessboardGame = () => {
         setGameOver(true);
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
+        setWinner(game.turn() === 'w' ? 'b' : 'w'); 
+        setShowCheckmateDialog(true);
       } else if (game.isStalemate()) {
         setGameStatus("Stalemate! Game is a draw.");
         setGameOver(true);
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
+        setWinner(null);
+        setShowCheckmateDialog(false);
       } else if (game.isDraw()) {
         setGameStatus("Draw!");
         setGameOver(true);
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
+        setWinner(null);
+        setShowCheckmateDialog(false);
       } else {
         setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
         setGameOver(false);
+        setWinner(null);
+        setShowCheckmateDialog(false);
       }
     } catch (e) {
       console.error("Error updating game status:", e instanceof Error ? e.message : String(e));
@@ -152,6 +166,8 @@ const ChessboardGame = () => {
       setGameOver(true);
       setIsWhiteTimerActive(false);
       setIsBlackTimerActive(false);
+      setWinner(null);
+      setShowCheckmateDialog(false);
       setToastMessage({
         id: `gameStatusError-${Date.now()}`,
         title: "Game Error",
@@ -159,7 +175,7 @@ const ChessboardGame = () => {
         variant: "destructive"
       });
     }
-  }, [game, setIsBlackTimerActive, setIsWhiteTimerActive, setGameOver, setGameStatus, setToastMessage]);
+  }, [game, setIsBlackTimerActive, setIsWhiteTimerActive, setGameOver, setGameStatus, setToastMessage, setWinner, setShowCheckmateDialog]);
 
   useEffect(() => {
     updateGameStatus();
@@ -213,9 +229,9 @@ const ChessboardGame = () => {
     setMoveTo(null);
 
     if (moveResult.captured) {
-      if (moveResult.color === 'w') { // White captured a black piece
+      if (moveResult.color === 'w') { 
         setCapturedByWhite(prev => [...prev, moveResult.captured!]);
-      } else { // Black captured a white piece
+      } else { 
         setCapturedByBlack(prev => [...prev, moveResult.captured!]);
       }
     }
@@ -298,7 +314,7 @@ const ChessboardGame = () => {
       from: sourceSquare,
       to: targetSquare,
     };
-
+    
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
@@ -338,6 +354,7 @@ const ChessboardGame = () => {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
         const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
         if (!moveSuccessful && !showPromotionDialog) { 
+          setMoveFrom('');
           setOptionSquares({});
         }
       } else {
@@ -374,6 +391,9 @@ const ChessboardGame = () => {
     setTimerResetKey(prev => prev + 1); 
     setCapturedByWhite([]);
     setCapturedByBlack([]);
+    setShowCheckmateDialog(false);
+    setWinner(null);
+
 
     if (playerMode === 'pvaBlack') {
       setBoardOrientation('black');
@@ -381,11 +401,10 @@ const ChessboardGame = () => {
       setBoardOrientation('white');
     }
     
-    // Set initial timer state based on whose turn it is
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
-    } else { // Should not happen on new game, but for safety
+    } else { 
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
@@ -402,6 +421,8 @@ const ChessboardGame = () => {
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
+    setShowCheckmateDialog(false); 
+    setWinner(null);
   }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive]); 
 
   const handleModeChange = (newMode: PlayerMode) => {
@@ -511,9 +532,51 @@ const ChessboardGame = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {showCheckmateDialog && winner && (
+        <Dialog open={showCheckmateDialog} onOpenChange={setShowCheckmateDialog}>
+          <DialogContent className="sm:max-w-md bg-card text-card-foreground">
+            <DialogHeader>
+              <DialogTitle className="text-3xl text-center font-bold text-primary">Checkmate!</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center space-y-6 p-6">
+              <div className="flex flex-col items-center text-center">
+                <Crown className="w-16 h-16 text-yellow-500 mb-2" />
+                <span className="text-7xl">
+                  {PIECE_UNICODE[winner]['k']}
+                </span>
+                <span className="text-xl font-semibold mt-1">{winner === 'w' ? 'White' : 'Black'} Wins!</span>
+              </div>
+
+              <Separator className="my-4 bg-border" />
+
+              <div className="flex flex-col items-center text-center">
+                <div className="relative mb-2">
+                  <span className="text-7xl transform rotate-180 inline-block">
+                    {PIECE_UNICODE[winner === 'w' ? 'b' : 'w']['k']}
+                  </span>
+                  <Swords className="w-12 h-12 text-destructive absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-80" style={{ transform: 'translate(-50%, -50%) rotate(-30deg)' }} />
+                </div>
+                <ThumbsDown className="w-14 h-14 text-destructive" />
+                <span className="text-xl font-semibold mt-1">{winner === 'w' ? 'Black' : 'White'} is Defeated</span>
+              </div>
+            </div>
+            <DialogFooter className="sm:justify-center pt-4 gap-2">
+              <Button type="button" onClick={() => {
+                setShowCheckmateDialog(false);
+                resetGame();
+              }} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                New Game
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowCheckmateDialog(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
 
 export default ChessboardGame;
-
