@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
-import { Crown, Swords, ThumbsDown, Handshake, Users, Scale, Flag } from 'lucide-react';
+import { Crown, Swords, ThumbsDown, Handshake } from 'lucide-react';
 
 const DEFAULT_INITIAL_TIME_SECONDS = 5 * 60; // Default 5 minutes
 
@@ -144,17 +144,14 @@ const ChessboardGame = () => {
         setGameStatus(`${offeringPlayer} offered a draw. ${respondingPlayer} to respond.`);
         // Show dialog for the responding player
         if ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w')) {
-           // This condition might be tricky if AI is involved or playerMode changes.
-           // The dialog is controlled by who is *not* drawOffer and it is their turn in a sense
            const humanPlayerIsResponding = 
              (playerMode === 'pvp') ||
-             (playerMode === 'pvaWhite' && drawOffer === 'b') || // AI (black) offered, human (white) responds
-             (playerMode === 'pvaBlack' && drawOffer === 'w'); // AI (white) offered, human (black) responds
+             (playerMode === 'pvaWhite' && drawOffer === 'b') || 
+             (playerMode === 'pvaBlack' && drawOffer === 'w'); 
            
            if (humanPlayerIsResponding && ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w'))) {
-              if ( (playerMode === 'pvaWhite' && game.turn() === 'b' && drawOffer === 'b') || // Human is White, AI (Black) offered
-                   (playerMode === 'pvaBlack' && game.turn() === 'w' && drawOffer === 'w') ) { // Human is Black, AI (White) offered
-                // This means AI offered, and it's human's turn to respond to the AI's offer
+              if ( (playerMode === 'pvaWhite' && game.turn() === 'b' && drawOffer === 'b') || 
+                   (playerMode === 'pvaBlack' && game.turn() === 'w' && drawOffer === 'w') ) { 
                  setShowDrawOfferDialog(true);
               } else if (playerMode === 'pvp' && ((game.turn() === 'b' && drawOffer === 'w') || (game.turn() === 'w' && drawOffer === 'b'))) {
                  setShowDrawOfferDialog(true);
@@ -185,8 +182,7 @@ const ChessboardGame = () => {
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
         setWinner(null);
-        if (game.isStalemate()) setDrawType("Stalemate");
-        else if (game.isThreefoldRepetition()) setDrawType("Threefold Repetition");
+        if (game.isThreefoldRepetition()) setDrawType("Threefold Repetition");
         else if (game.isInsufficientMaterial()) setDrawType("Insufficient Material");
         else setDrawType("Automatic Draw (e.g., 50-move rule)");
         setShowDrawGameDialog(true);
@@ -217,10 +213,10 @@ const ChessboardGame = () => {
 
   useEffect(() => {
     updateGameStatus();
-  }, [fen, updateGameStatus, drawOffer]); // Added drawOffer here
+  }, [fen, updateGameStatus, drawOffer]);
 
  const makeMove = useCallback((move: ShortMove | string) => {
-    if (gameOver || drawOffer) { // Prevent moves if game over or draw offer pending
+    if (gameOver || drawOffer) { 
       if (drawOffer) {
         setToastMessage({
           id: `drawOfferPending-${Date.now()}`,
@@ -294,7 +290,7 @@ const ChessboardGame = () => {
   }, [
     game,
     gameOver,
-    drawOffer, // Added drawOffer
+    drawOffer, 
     HIGHLIGHT_LAST_MOVE_COLOR,
     setToastMessage, 
     setGame,
@@ -311,7 +307,7 @@ const ChessboardGame = () => {
 
 
   const makeRandomMove = useCallback(() => {
-    if (game.isGameOver() || gameOver || drawOffer) return; // Don't let AI move if draw offer
+    if (game.isGameOver() || gameOver || drawOffer) return; 
     const possibleMoves = game.moves({ verbose: true });
     if (possibleMoves.length === 0) return;
     const randomIndex = Math.floor(Math.random() * possibleMoves.length);
@@ -320,7 +316,7 @@ const ChessboardGame = () => {
   }, [game, makeMove, gameOver, drawOffer]);
 
   useEffect(() => {
-    if (gameOver || drawOffer) return; // Don't process AI moves if game over or draw offer pending
+    if (gameOver || drawOffer) return; 
     const isAITurn =
       (playerMode === 'pvaWhite' && game.turn() === 'b') ||
       (playerMode === 'pvaBlack' && game.turn() === 'w');
@@ -334,7 +330,7 @@ const ChessboardGame = () => {
   }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer]);
 
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
-    if (gameOver || drawOffer) return false; // Prevent moves if game over or draw offer pending
+    if (gameOver || drawOffer) return false;
 
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
@@ -362,13 +358,16 @@ const ChessboardGame = () => {
       from: sourceSquare,
       to: targetSquare,
     };
+    // Only add promotion if it's actually a promotion (handled by onPromotionPieceSelect or AI)
+    // For regular drops, promotion field is not needed unless it's a pawn reaching promotion square
+    // which is handled by the promotion dialog trigger above.
     
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
 
   const onSquareClick = (square: Square) => {
-    if (gameOver || drawOffer) return; // Prevent interaction if game over or draw offer pending
+    if (gameOver || drawOffer) return; 
 
     if (!moveFrom) { 
       const pieceOnSquare = game.get(square);
@@ -402,8 +401,6 @@ const ChessboardGame = () => {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
         const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
         if (!moveSuccessful && !showPromotionDialog) { 
-          // If move failed (e.g. illegal) and it wasn't because of a promotion dialog popping up
-          // then reset selection
           setMoveFrom('');
           setOptionSquares({});
         }
@@ -455,7 +452,6 @@ const ChessboardGame = () => {
       setBoardOrientation('white');
     }
     
-    // Initial turn timer activation based on game state after reset
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
@@ -463,7 +459,6 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-    // updateGameStatus(); // Call updateGameStatus after resetting everything
   }, [playerMode, initialTimeSetting, setGame, setFen, setGameOver, setWhiteTime, setBlackTime, setMoveFrom, setOptionSquares, setLastMoveSquares, setTimerResetKey, setCapturedByWhite, setCapturedByBlack, setShowCheckmateDialog, setWinner, setDrawOffer, setShowDrawOfferDialog, setShowDrawGameDialog, setDrawType, setBoardOrientation, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
 
@@ -477,10 +472,9 @@ const ChessboardGame = () => {
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-    setShowCheckmateDialog(false); 
-    setShowDrawGameDialog(false);
-    setWinner(null);
-  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setShowCheckmateDialog, setShowDrawGameDialog, setWinner]); 
+    setWinner(player === 'white' ? 'b' : 'w'); 
+    setShowCheckmateDialog(true);
+  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setWinner, setShowCheckmateDialog]); 
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
@@ -495,17 +489,15 @@ const ChessboardGame = () => {
     const offeringPlayerColor = game.turn();
     setDrawOffer(offeringPlayerColor);
     
-    // Adjust timers: pause offerer, start responder
     if (offeringPlayerColor === 'w') {
       setIsWhiteTimerActive(false);
-      setIsBlackTimerActive(true); // Black to respond
+      setIsBlackTimerActive(true); 
     } else {
       setIsBlackTimerActive(false);
-      setIsWhiteTimerActive(true); // White to respond
+      setIsWhiteTimerActive(true); 
     }
-    setShowDrawOfferDialog(true); // This will be shown to the responding player by updateGameStatus
-    updateGameStatus(); // Update status message immediately
-  }, [gameOver, drawOffer, game, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive, updateGameStatus, setShowDrawOfferDialog]);
+    // updateGameStatus will handle showing the dialog to the correct player
+  }, [gameOver, drawOffer, game, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
   const handleAcceptDraw = useCallback(() => {
     setGameOver(true);
@@ -516,18 +508,22 @@ const ChessboardGame = () => {
     setShowDrawGameDialog(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-    updateGameStatus();
-  }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive, updateGameStatus]);
+  }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
   const handleRejectDraw = useCallback(() => {
-    const offeringPlayer = drawOffer;
+    const offeringPlayer = drawOffer; // Store who offered before clearing
     setDrawOffer(null);
     setShowDrawOfferDialog(false);
-    // Game continues. The player who rejected is to move. Their timer should already be active from handleOfferDraw.
-    // If white offered, black was responding. Black rejected, black to move. isBlackTimerActive should be true.
-    // If black offered, white was responding. White rejected, white to move. isWhiteTimerActive should be true.
-    updateGameStatus(); // Refresh status to normal turn.
-  }, [drawOffer, setDrawOffer, setShowDrawOfferDialog, updateGameStatus]);
+    
+    // Resume timers: turn of the player who was responding (who rejected)
+    if (offeringPlayer === 'w') { // White offered, Black rejected
+      setIsBlackTimerActive(true);
+      setIsWhiteTimerActive(false);
+    } else { // Black offered, White rejected
+      setIsWhiteTimerActive(true);
+      setIsBlackTimerActive(false);
+    }
+  }, [drawOffer, setDrawOffer, setShowDrawOfferDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
   const canOfferDraw = !gameOver && !drawOffer &&
     (playerMode === 'pvp' ||
@@ -639,7 +635,7 @@ const ChessboardGame = () => {
       )}
       
       {showDrawOfferDialog && drawOffer && (
-          <Dialog open={showDrawOfferDialog} onOpenChange={(open) => { if (!open) handleRejectDraw(); /* Closing dialog implies rejection */ else setShowDrawOfferDialog(open); }}>
+          <Dialog open={showDrawOfferDialog} onOpenChange={(open) => { if (!open && drawOffer) handleRejectDraw(); setShowDrawOfferDialog(open); }}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Draw Offer</DialogTitle>
@@ -727,4 +723,3 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-
