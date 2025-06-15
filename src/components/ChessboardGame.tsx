@@ -126,26 +126,40 @@ const ChessboardGame = () => {
 
 
   const updateGameStatus = useCallback(() => {
-    if (game.isCheckmate()) {
-      setGameStatus(`Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`);
+    try {
+      if (game.isCheckmate()) {
+        setGameStatus(`Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`);
+        setGameOver(true);
+        setIsWhiteTimerActive(false);
+        setIsBlackTimerActive(false);
+      } else if (game.isStalemate()) {
+        setGameStatus("Stalemate! Game is a draw.");
+        setGameOver(true);
+        setIsWhiteTimerActive(false);
+        setIsBlackTimerActive(false);
+      } else if (game.isDraw()) {
+        setGameStatus("Draw!");
+        setGameOver(true);
+        setIsWhiteTimerActive(false);
+        setIsBlackTimerActive(false);
+      } else {
+        setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
+        setGameOver(false);
+      }
+    } catch (e) {
+      console.error("Error updating game status:", e instanceof Error ? e.message : String(e));
+      setGameStatus("Error evaluating game state. Game over.");
       setGameOver(true);
       setIsWhiteTimerActive(false);
       setIsBlackTimerActive(false);
-    } else if (game.isStalemate()) {
-      setGameStatus("Stalemate! Game is a draw.");
-      setGameOver(true);
-      setIsWhiteTimerActive(false);
-      setIsBlackTimerActive(false);
-    } else if (game.isDraw()) {
-      setGameStatus("Draw!");
-      setGameOver(true);
-      setIsWhiteTimerActive(false);
-      setIsBlackTimerActive(false);
-    } else {
-      setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
-      setGameOver(false);
+      setToastMessage({
+        id: `gameStatusError-${Date.now()}`,
+        title: "Game Error",
+        description: "An unexpected error occurred while checking the game status.",
+        variant: "destructive"
+      });
     }
-  }, [game]);
+  }, [game, setIsBlackTimerActive, setIsWhiteTimerActive, setGameOver, setGameStatus, setToastMessage]);
 
   useEffect(() => {
     updateGameStatus();
@@ -273,7 +287,7 @@ const ChessboardGame = () => {
     const moveDetails = tempGame.moves({ square: sourceSquare, verbose: true })
                          .find(m => m.to === targetSquare);
 
-    if (moveDetails?.flags.includes('p')) { 
+    if (moveDetails?.flags.includes('p') && (targetSquare.endsWith('8') || targetSquare.endsWith('1'))) { 
       setMoveFrom(sourceSquare); 
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
@@ -321,16 +335,13 @@ const ChessboardGame = () => {
       
       const pieceToMove = game.get(moveFrom);
       if (pieceToMove) {
-        // Construct the piece string react-chessboard expects: e.g., 'wP', 'bN'
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
         const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
-        if (!moveSuccessful && !showPromotionDialog) { // Clear highlights if move failed and it wasn't due to promotion dialog
+        if (!moveSuccessful && !showPromotionDialog) { 
           setOptionSquares({});
         }
-        // If moveSuccessful is true, makeMove already resets moveFrom and optionSquares.
-        // If showPromotionDialog is true, onPromotionPieceSelect will handle cleanup.
       } else {
-         setMoveFrom(''); // Should not happen if moveFrom is valid
+         setMoveFrom(''); 
          setOptionSquares({});
       }
     }
@@ -370,10 +381,11 @@ const ChessboardGame = () => {
       setBoardOrientation('white');
     }
     
+    // Set initial timer state based on whose turn it is
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
-    } else { 
+    } else { // Should not happen on new game, but for safety
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
@@ -390,7 +402,7 @@ const ChessboardGame = () => {
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-  }, [gameOver]); 
+  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive]); 
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
@@ -492,7 +504,7 @@ const ChessboardGame = () => {
                   onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)}
                   className="w-16 h-16 text-3xl"
                 >
-                  {pSymbol === 'n' ? 'N' : pSymbol.toUpperCase()}
+                  {PIECE_UNICODE[game.turn()][pSymbol]}
                 </Button>
               ))}
             </div>
