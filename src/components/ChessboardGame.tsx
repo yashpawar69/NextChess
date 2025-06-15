@@ -136,6 +136,8 @@ const ChessboardGame = () => {
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({});
   const [lastMoveSquares, setLastMoveSquares] = useState<Record<string, React.CSSProperties>>({});
+  const [checkSquare, setCheckSquare] = useState<Square | null>(null);
+
 
   const [whiteTime, setWhiteTime] = useState(initialTimeSetting);
   const [blackTime, setBlackTime] = useState(initialTimeSetting);
@@ -163,6 +165,7 @@ const ChessboardGame = () => {
   const CHESS_BOARD_DARK_COLOR = 'hsl(var(--chess-board-dark))';
   const HIGHLIGHT_MOVE_COLOR = 'hsl(var(--chess-highlight-move))';
   const HIGHLIGHT_LAST_MOVE_COLOR = 'hsl(var(--chess-highlight-last))';
+  const HIGHLIGHT_CHECK_COLOR = 'hsl(var(--chess-highlight-check))';
 
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
@@ -344,7 +347,9 @@ const ChessboardGame = () => {
 
     const pgn = game.pgn();
     const nextGameInstance = new Chess();
-    nextGameInstance.loadPgn(pgn); 
+    if (pgn) {
+      nextGameInstance.loadPgn(pgn); 
+    }
 
     let moveResult;
     try {
@@ -440,6 +445,7 @@ const ChessboardGame = () => {
     setMoveFrom('');
     setOptionSquares({});
     setLastMoveSquares({});
+    setCheckSquare(null);
     setTimerResetKey(prev => prev + 1);
     setCapturedByWhite([]);
     setCapturedByBlack([]);
@@ -505,6 +511,27 @@ const ChessboardGame = () => {
   useEffect(() => {
     resetGame();
   }, [playerMode, initialTimeSetting, resetGame]);
+
+  useEffect(() => {
+    if (game.isCheck()) {
+      const kingColor = game.turn();
+      const board = game.board();
+      let foundKingSquare: Square | null = null;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const piece = board[r][c];
+          if (piece && piece.type === 'k' && piece.color === kingColor) {
+            foundKingSquare = (String.fromCharCode('a'.charCodeAt(0) + c) + (8 - r)) as Square;
+            break;
+          }
+        }
+        if (foundKingSquare) break;
+      }
+      setCheckSquare(foundKingSquare);
+    } else {
+      setCheckSquare(null);
+    }
+  }, [game]);
 
 
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
@@ -683,6 +710,9 @@ const ChessboardGame = () => {
           customSquareStyles={{
             ...optionSquares,
             ...lastMoveSquares,
+            ...(checkSquare && {
+              [checkSquare]: { backgroundColor: HIGHLIGHT_CHECK_COLOR },
+            }),
           }}
           promotionDialogVariant="basic"
           arePiecesDraggable={!gameOver && !drawOffer && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
