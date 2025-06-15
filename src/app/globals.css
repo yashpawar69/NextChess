@@ -47,6 +47,7 @@ body {
     --chess-board-dark: 83 29% 46%; /* #769656 */
     --chess-highlight-move: 60 87% 70%; /* #f6f669 */
     --chess-highlight-last: 76 56% 58%; /* #aad751 */
+    --chess-highlight-check: 0 100% 75%; /* Light red/pinkish #ff8080 */
   }
   .dark {
     --background: 0 0% 17%; /* Dark Gray / Black #2b2b2b */
@@ -87,6 +88,7 @@ body {
     --chess-board-dark: 83 29% 46%; /* #769656 */
     --chess-highlight-move: 60 87% 70%; /* #f6f669 */
     --chess-highlight-last: 76 56% 58%; /* #aad751 */
+    --chess-highlight-check: 0 80% 65%; /* Slightly darker red/pinkish for dark mode #ff6666 */
   }
 }
 
