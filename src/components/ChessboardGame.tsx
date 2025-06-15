@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
-import { Crown, Swords, ThumbsDown } from 'lucide-react';
+import { Crown, Swords, ThumbsDown, Handshake, Users, Scale, Flag } from 'lucide-react';
 
 const DEFAULT_INITIAL_TIME_SECONDS = 5 * 60; // Default 5 minutes
 
@@ -112,6 +112,11 @@ const ChessboardGame = () => {
   const [showCheckmateDialog, setShowCheckmateDialog] = useState(false);
   const [winner, setWinner] = useState<'w' | 'b' | null>(null);
 
+  const [drawOffer, setDrawOffer] = useState<'w' | 'b' | null>(null);
+  const [showDrawOfferDialog, setShowDrawOfferDialog] = useState(false);
+  const [showDrawGameDialog, setShowDrawGameDialog] = useState(false);
+  const [drawType, setDrawType] = useState<string | null>(null);
+
 
   useEffect(() => {
     if (toastMessage) {
@@ -133,6 +138,32 @@ const ChessboardGame = () => {
 
   const updateGameStatus = useCallback(() => {
     try {
+      if (drawOffer) {
+        const offeringPlayer = drawOffer === 'w' ? 'White' : 'Black';
+        const respondingPlayer = drawOffer === 'w' ? 'Black' : 'White';
+        setGameStatus(`${offeringPlayer} offered a draw. ${respondingPlayer} to respond.`);
+        // Show dialog for the responding player
+        if ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w')) {
+           // This condition might be tricky if AI is involved or playerMode changes.
+           // The dialog is controlled by who is *not* drawOffer and it is their turn in a sense
+           const humanPlayerIsResponding = 
+             (playerMode === 'pvp') ||
+             (playerMode === 'pvaWhite' && drawOffer === 'b') || // AI (black) offered, human (white) responds
+             (playerMode === 'pvaBlack' && drawOffer === 'w'); // AI (white) offered, human (black) responds
+           
+           if (humanPlayerIsResponding && ((drawOffer === 'w' && game.turn() === 'b') || (drawOffer === 'b' && game.turn() === 'w'))) {
+              if ( (playerMode === 'pvaWhite' && game.turn() === 'b' && drawOffer === 'b') || // Human is White, AI (Black) offered
+                   (playerMode === 'pvaBlack' && game.turn() === 'w' && drawOffer === 'w') ) { // Human is Black, AI (White) offered
+                // This means AI offered, and it's human's turn to respond to the AI's offer
+                 setShowDrawOfferDialog(true);
+              } else if (playerMode === 'pvp' && ((game.turn() === 'b' && drawOffer === 'w') || (game.turn() === 'w' && drawOffer === 'b'))) {
+                 setShowDrawOfferDialog(true);
+              }
+           }
+        }
+        return;
+      }
+
       if (game.isCheckmate()) {
         setGameStatus(`Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`);
         setGameOver(true);
@@ -146,19 +177,25 @@ const ChessboardGame = () => {
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
         setWinner(null);
-        setShowCheckmateDialog(false);
+        setDrawType("Stalemate");
+        setShowDrawGameDialog(true);
       } else if (game.isDraw()) {
         setGameStatus("Draw!");
         setGameOver(true);
         setIsWhiteTimerActive(false);
         setIsBlackTimerActive(false);
         setWinner(null);
-        setShowCheckmateDialog(false);
+        if (game.isStalemate()) setDrawType("Stalemate");
+        else if (game.isThreefoldRepetition()) setDrawType("Threefold Repetition");
+        else if (game.isInsufficientMaterial()) setDrawType("Insufficient Material");
+        else setDrawType("Automatic Draw (e.g., 50-move rule)");
+        setShowDrawGameDialog(true);
       } else {
         setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
         setGameOver(false);
         setWinner(null);
         setShowCheckmateDialog(false);
+        setShowDrawGameDialog(false);
       }
     } catch (e) {
       console.error("Error updating game status:", e instanceof Error ? e.message : String(e));
@@ -168,6 +205,7 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(false);
       setWinner(null);
       setShowCheckmateDialog(false);
+      setShowDrawGameDialog(false);
       setToastMessage({
         id: `gameStatusError-${Date.now()}`,
         title: "Game Error",
@@ -175,20 +213,29 @@ const ChessboardGame = () => {
         variant: "destructive"
       });
     }
-  }, [game, setIsBlackTimerActive, setIsWhiteTimerActive, setGameOver, setGameStatus, setToastMessage, setWinner, setShowCheckmateDialog]);
+  }, [game, drawOffer, playerMode, setToastMessage, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setWinner, setShowCheckmateDialog, setDrawType, setShowDrawGameDialog, setShowDrawOfferDialog]);
 
   useEffect(() => {
     updateGameStatus();
-  }, [fen, updateGameStatus]);
+  }, [fen, updateGameStatus, drawOffer]); // Added drawOffer here
 
  const makeMove = useCallback((move: ShortMove | string) => {
-    if (gameOver) {
-      setToastMessage({
-        id: `gameOver-${Date.now()}`,
-        title: "Game Over",
-        description: "Cannot make moves, the game has ended.",
-        variant: "destructive"
-      });
+    if (gameOver || drawOffer) { // Prevent moves if game over or draw offer pending
+      if (drawOffer) {
+        setToastMessage({
+          id: `drawOfferPending-${Date.now()}`,
+          title: "Draw Offer Pending",
+          description: "Please respond to the draw offer before making a move.",
+          variant: "destructive"
+        });
+      } else {
+        setToastMessage({
+          id: `gameOver-${Date.now()}`,
+          title: "Game Over",
+          description: "Cannot make moves, the game has ended.",
+          variant: "destructive"
+        });
+      }
       return false;
     }
 
@@ -247,6 +294,7 @@ const ChessboardGame = () => {
   }, [
     game,
     gameOver,
+    drawOffer, // Added drawOffer
     HIGHLIGHT_LAST_MOVE_COLOR,
     setToastMessage, 
     setGame,
@@ -263,16 +311,16 @@ const ChessboardGame = () => {
 
 
   const makeRandomMove = useCallback(() => {
-    if (game.isGameOver() || gameOver) return;
+    if (game.isGameOver() || gameOver || drawOffer) return; // Don't let AI move if draw offer
     const possibleMoves = game.moves({ verbose: true });
     if (possibleMoves.length === 0) return;
     const randomIndex = Math.floor(Math.random() * possibleMoves.length);
     const randomMove = possibleMoves[randomIndex];
     makeMove({ from: randomMove.from, to: randomMove.to, promotion: randomMove.promotion });
-  }, [game, makeMove, gameOver]);
+  }, [game, makeMove, gameOver, drawOffer]);
 
   useEffect(() => {
-    if (gameOver) return;
+    if (gameOver || drawOffer) return; // Don't process AI moves if game over or draw offer pending
     const isAITurn =
       (playerMode === 'pvaWhite' && game.turn() === 'b') ||
       (playerMode === 'pvaBlack' && game.turn() === 'w');
@@ -283,10 +331,10 @@ const ChessboardGame = () => {
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver]);
+  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer]);
 
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
-    if (gameOver) return false;
+    if (gameOver || drawOffer) return false; // Prevent moves if game over or draw offer pending
 
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
@@ -320,7 +368,7 @@ const ChessboardGame = () => {
   };
 
   const onSquareClick = (square: Square) => {
-    if (gameOver) return;
+    if (gameOver || drawOffer) return; // Prevent interaction if game over or draw offer pending
 
     if (!moveFrom) { 
       const pieceOnSquare = game.get(square);
@@ -354,6 +402,8 @@ const ChessboardGame = () => {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
         const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
         if (!moveSuccessful && !showPromotionDialog) { 
+          // If move failed (e.g. illegal) and it wasn't because of a promotion dialog popping up
+          // then reset selection
           setMoveFrom('');
           setOptionSquares({});
         }
@@ -393,6 +443,10 @@ const ChessboardGame = () => {
     setCapturedByBlack([]);
     setShowCheckmateDialog(false);
     setWinner(null);
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+    setShowDrawGameDialog(false);
+    setDrawType(null);
 
 
     if (playerMode === 'pvaBlack') {
@@ -401,6 +455,7 @@ const ChessboardGame = () => {
       setBoardOrientation('white');
     }
     
+    // Initial turn timer activation based on game state after reset
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
@@ -408,7 +463,8 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-  }, [playerMode, initialTimeSetting ]);
+    // updateGameStatus(); // Call updateGameStatus after resetting everything
+  }, [playerMode, initialTimeSetting, setGame, setFen, setGameOver, setWhiteTime, setBlackTime, setMoveFrom, setOptionSquares, setLastMoveSquares, setTimerResetKey, setCapturedByWhite, setCapturedByBlack, setShowCheckmateDialog, setWinner, setDrawOffer, setShowDrawOfferDialog, setShowDrawGameDialog, setDrawType, setBoardOrientation, setIsWhiteTimerActive, setIsBlackTimerActive]);
 
 
   useEffect(() => {
@@ -422,8 +478,9 @@ const ChessboardGame = () => {
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
     setShowCheckmateDialog(false); 
+    setShowDrawGameDialog(false);
     setWinner(null);
-  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive]); 
+  }, [gameOver, setGameStatus, setGameOver, setIsWhiteTimerActive, setIsBlackTimerActive, setShowCheckmateDialog, setShowDrawGameDialog, setWinner]); 
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
@@ -433,12 +490,55 @@ const ChessboardGame = () => {
     setInitialTimeSetting(parseInt(value, 10));
   };
 
+  const handleOfferDraw = useCallback(() => {
+    if (gameOver || drawOffer) return;
+    const offeringPlayerColor = game.turn();
+    setDrawOffer(offeringPlayerColor);
+    
+    // Adjust timers: pause offerer, start responder
+    if (offeringPlayerColor === 'w') {
+      setIsWhiteTimerActive(false);
+      setIsBlackTimerActive(true); // Black to respond
+    } else {
+      setIsBlackTimerActive(false);
+      setIsWhiteTimerActive(true); // White to respond
+    }
+    setShowDrawOfferDialog(true); // This will be shown to the responding player by updateGameStatus
+    updateGameStatus(); // Update status message immediately
+  }, [gameOver, drawOffer, game, setDrawOffer, setIsWhiteTimerActive, setIsBlackTimerActive, updateGameStatus, setShowDrawOfferDialog]);
+
+  const handleAcceptDraw = useCallback(() => {
+    setGameOver(true);
+    setGameStatus("Game drawn by agreement.");
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+    setDrawType("Agreement");
+    setShowDrawGameDialog(true);
+    setIsWhiteTimerActive(false);
+    setIsBlackTimerActive(false);
+    updateGameStatus();
+  }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive, updateGameStatus]);
+
+  const handleRejectDraw = useCallback(() => {
+    const offeringPlayer = drawOffer;
+    setDrawOffer(null);
+    setShowDrawOfferDialog(false);
+    // Game continues. The player who rejected is to move. Their timer should already be active from handleOfferDraw.
+    // If white offered, black was responding. Black rejected, black to move. isBlackTimerActive should be true.
+    // If black offered, white was responding. White rejected, white to move. isWhiteTimerActive should be true.
+    updateGameStatus(); // Refresh status to normal turn.
+  }, [drawOffer, setDrawOffer, setShowDrawOfferDialog, updateGameStatus]);
+
+  const canOfferDraw = !gameOver && !drawOffer &&
+    (playerMode === 'pvp' ||
+     (playerMode === 'pvaWhite' && game.turn() === 'w') ||
+     (playerMode === 'pvaBlack' && game.turn() === 'b'));
 
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
-      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0 sm:space-x-2">
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0 sm:space-x-2 flex-wrap gap-2">
         <Select value={playerMode} onValueChange={(value) => handleModeChange(value as PlayerMode)}>
-          <SelectTrigger className="w-full sm:w-[180px] bg-card">
+          <SelectTrigger className="w-full sm:w-auto flex-grow sm:flex-grow-0 sm:min-w-[150px] bg-card">
             <SelectValue placeholder="Select mode" />
           </SelectTrigger>
           <SelectContent>
@@ -448,7 +548,7 @@ const ChessboardGame = () => {
           </SelectContent>
         </Select>
         <Select value={String(initialTimeSetting)} onValueChange={handleTimerChange}>
-          <SelectTrigger className="w-full sm:w-[150px] bg-card">
+          <SelectTrigger className="w-full sm:w-auto flex-grow sm:flex-grow-0 sm:min-w-[120px] bg-card">
             <SelectValue placeholder="Timer" />
           </SelectTrigger>
           <SelectContent>
@@ -459,7 +559,12 @@ const ChessboardGame = () => {
             <SelectItem value={String(15 * 60)}>15 Minutes</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={resetGame} variant="outline" className="w-full sm:w-auto">Reset Game</Button>
+        <Button onClick={resetGame} variant="outline" className="w-full sm:w-auto flex-grow sm:flex-grow-0">Reset Game</Button>
+        {canOfferDraw && (
+          <Button onClick={handleOfferDraw} variant="outline" className="w-full sm:w-auto flex-grow sm:flex-grow-0">
+            <Handshake className="mr-2 h-4 w-4" /> Offer Draw
+          </Button>
+        )}
       </div>
 
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-between items-center space-x-2">
@@ -491,7 +596,7 @@ const ChessboardGame = () => {
             ...lastMoveSquares,
           }}
           promotionDialogVariant="basic" 
-          arePiecesDraggable={!gameOver && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
+          arePiecesDraggable={!gameOver && !drawOffer && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
           id="NextChessboard" 
         />
       </div>
@@ -529,6 +634,48 @@ const ChessboardGame = () => {
                 </Button>
               ))}
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      
+      {showDrawOfferDialog && drawOffer && (
+          <Dialog open={showDrawOfferDialog} onOpenChange={(open) => { if (!open) handleRejectDraw(); /* Closing dialog implies rejection */ else setShowDrawOfferDialog(open); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Draw Offer</DialogTitle>
+                <DialogDescription>
+                  {(drawOffer === 'w' ? 'White' : 'Black')} has offered a draw. Do you want to accept?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="sm:justify-center pt-4 gap-2">
+                <Button onClick={handleAcceptDraw} className="bg-primary hover:bg-primary/90 text-primary-foreground">Accept Draw</Button>
+                <Button onClick={handleRejectDraw} variant="outline">Reject Draw</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      }
+
+      {showDrawGameDialog && (
+        <Dialog open={showDrawGameDialog} onOpenChange={setShowDrawGameDialog}>
+          <DialogContent className="sm:max-w-md bg-card text-card-foreground">
+            <DialogHeader>
+              <DialogTitle className="text-3xl text-center font-bold text-primary">Game Drawn!</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center space-y-6 p-6">
+              <Handshake className="w-24 h-24 text-muted-foreground mb-4" />
+              <p className="text-xl font-semibold text-center">
+                The game is a draw by {drawType || "mutual agreement"}.
+              </p>
+            </div>
+            <DialogFooter className="sm:justify-center pt-4 gap-2">
+              <Button type="button" onClick={() => { setShowDrawGameDialog(false); resetGame(); }} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                New Game
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowDrawGameDialog(false)}>
+                Close
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
@@ -580,3 +727,4 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
+
