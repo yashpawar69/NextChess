@@ -34,9 +34,9 @@ const PIECE_UNICODE: Record<'w' | 'b', Record<PieceSymbol, string>> = {
 };
 
 interface CapturedPiecesDisplayProps {
-  capturedPieces: PieceSymbol[]; 
-  colorOfCapturedPieces: 'w' | 'b'; 
-  capturerName: string; 
+  capturedPieces: PieceSymbol[];
+  colorOfCapturedPieces: 'w' | 'b';
+  capturerName: string;
 }
 
 const CapturedPiecesDisplay: React.FC<CapturedPiecesDisplayProps> = ({ capturedPieces, colorOfCapturedPieces, capturerName }) => {
@@ -50,7 +50,7 @@ const CapturedPiecesDisplay: React.FC<CapturedPiecesDisplayProps> = ({ capturedP
 
   const pieceOrderValue: Record<PieceSymbol, number> = { q: 5, r: 4, b: 3, n: 2, p: 1, k: 0 };
   const sortedPieces = [...capturedPieces].sort((a, b) => {
-    return pieceOrderValue[b] - pieceOrderValue[a]; 
+    return pieceOrderValue[b] - pieceOrderValue[a];
   });
 
   return (
@@ -58,9 +58,9 @@ const CapturedPiecesDisplay: React.FC<CapturedPiecesDisplayProps> = ({ capturedP
       <div className="text-xs text-muted-foreground mb-1 self-center">Captured by {capturerName}:</div>
       <div className="flex flex-wrap gap-x-1 gap-y-0 leading-none">
         {sortedPieces.map((pieceType, index) => (
-          <span 
-            key={index} 
-            className="text-xl" 
+          <span
+            key={index}
+            className="text-xl"
             title={`${colorOfCapturedPieces === 'w' ? 'White' : 'Black'} ${pieceType.toUpperCase()}`}
           >
             {PIECE_UNICODE[colorOfCapturedPieces][pieceType]}
@@ -77,7 +77,7 @@ const ChessboardGame = () => {
   const [game, setGame] = useState(new Chess());
   const [fen, setFen] = useState(game.fen());
   const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
-  
+
   const [playerMode, setPlayerMode] = useState<PlayerMode>('pvp');
   const [initialTimeSetting, setInitialTimeSetting] = useState(DEFAULT_INITIAL_TIME_SECONDS);
 
@@ -142,45 +142,43 @@ const ChessboardGame = () => {
   }, []);
 
   const makeMove = useCallback((move: ShortMove | string) => {
-    if (gameOver) { 
+    if (gameOver) {
       toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
       return false;
     }
 
-    try {
-      const result = game.move(move); 
-      if (result) {
-        setFen(game.fen()); 
-        setLastMoveSquares({
-          [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
-          [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
-        });
-        setOptionSquares({});
-        setMoveFrom('');
-        setMoveTo(null);
+    let moveResult = false;
+    safeGameMutate(g => {
+        const result = g.move(move);
+        if (result) {
+            setLastMoveSquares({
+            [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
+            [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
+            });
+            setOptionSquares({});
+            setMoveFrom('');
+            setMoveTo(null);
 
-        if (result.captured) {
-          if (result.color === 'w') { 
-            setCapturedByWhite(prev => [...prev, result.captured!]);
-          } else { 
-            setCapturedByBlack(prev => [...prev, result.captured!]);
-          }
+            if (result.captured) {
+            if (result.color === 'w') {
+                setCapturedByWhite(prev => [...prev, result.captured!]);
+            } else {
+                setCapturedByBlack(prev => [...prev, result.captured!]);
+            }
+            }
+
+            if (g.turn() === 'w') {
+            setIsWhiteTimerActive(true);
+            setIsBlackTimerActive(false);
+            } else {
+            setIsBlackTimerActive(true);
+            setIsWhiteTimerActive(false);
+            }
+            moveResult = true;
         }
-        
-        if (game.turn() === 'w') {
-          setIsWhiteTimerActive(true);
-          setIsBlackTimerActive(false);
-        } else {
-          setIsBlackTimerActive(true);
-          setIsWhiteTimerActive(false);
-        }
-        return true;
-      }
-    } catch (e) {
-      return false;
-    }
-    return false;
-  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR, gameOver, safeGameMutate]);
+    });
+    return moveResult;
+  }, [gameOver, safeGameMutate, toast, HIGHLIGHT_LAST_MOVE_COLOR]);
 
 
   const makeRandomMove = useCallback(() => {
@@ -194,8 +192,8 @@ const ChessboardGame = () => {
 
   useEffect(() => {
     if (gameOver) return;
-    const isAITurn = 
-      (playerMode === 'pvaWhite' && game.turn() === 'b') || 
+    const isAITurn =
+      (playerMode === 'pvaWhite' && game.turn() === 'b') ||
       (playerMode === 'pvaBlack' && game.turn() === 'w');
 
     if (isAITurn) {
@@ -205,17 +203,17 @@ const ChessboardGame = () => {
       return () => clearTimeout(timeoutId);
     }
   }, [fen, playerMode, game, makeRandomMove, gameOver]);
-  
+
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
     if (gameOver) return false;
-    
+
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
 
     if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
-      return false; 
+      return false;
     }
-    
+
     if (gameTurn !== movingPieceColor) {
         return false;
     }
@@ -223,22 +221,22 @@ const ChessboardGame = () => {
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      promotion: 'q', 
+      promotion: 'q',
     };
 
     const foundMove = game.moves({ verbose: true }).find(m => m.from === sourceSquare && m.to === targetSquare);
-    
-    if (foundMove?.flags.includes('p')) { 
+
+    if (foundMove?.flags.includes('p')) {
       setMoveFrom(sourceSquare);
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false; 
+      return false;
     }
 
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
-  
+
   const onSquareClick = (square: Square) => {
     if (gameOver) return;
 
@@ -262,8 +260,8 @@ const ChessboardGame = () => {
         newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR };
         setOptionSquares(newOptionSquares);
       }
-    } else { 
-      if (square === moveFrom) { 
+    } else {
+      if (square === moveFrom) {
         setMoveFrom('');
         setOptionSquares({});
         return;
@@ -277,7 +275,7 @@ const ChessboardGame = () => {
       }
     }
   };
-  
+
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
     if (piece && moveFrom && moveTo) {
       const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol;
@@ -295,7 +293,7 @@ const ChessboardGame = () => {
     setGame(newGame);
     setFen(newGame.fen());
     setGameOver(false);
-    
+
     setWhiteTime(initialTimeSetting);
     setBlackTime(initialTimeSetting);
 
@@ -311,24 +309,22 @@ const ChessboardGame = () => {
     } else {
       setBoardOrientation('white');
     }
-    
-    // Set initial active timer based on whose turn it is
+
     if (newGame.turn() === 'w') {
-      setIsWhiteTimerActive(true); 
+      setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
     } else {
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-
-  }, [playerMode, safeGameMutate, initialTimeSetting, game ]); 
+  }, [playerMode, initialTimeSetting]);
 
   useEffect(() => {
     resetGame();
-  }, [playerMode, initialTimeSetting, resetGame]); 
+  }, [playerMode, initialTimeSetting, resetGame]);
 
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
-    if (gameOver) return; 
+    if (gameOver) return;
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
     setGameOver(true);
     setIsWhiteTimerActive(false);
@@ -342,7 +338,7 @@ const ChessboardGame = () => {
   const handleTimerChange = (value: string) => {
     setInitialTimeSetting(parseInt(value, 10));
   };
-  
+
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0 sm:space-x-2">
@@ -380,7 +376,7 @@ const ChessboardGame = () => {
           />
         <CapturedPiecesDisplay capturedPieces={capturedByBlack} colorOfCapturedPieces="w" capturerName="Black" />
       </div>
-      
+
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl shadow-2xl rounded-lg overflow-hidden">
         <Chessboard
           position={fen}
@@ -428,10 +424,10 @@ const ChessboardGame = () => {
             </DialogHeader>
             <div className="flex justify-around p-4">
               {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((pSymbol) => (
-                <Button 
-                  key={pSymbol} 
-                  variant="outline" 
-                  onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)} 
+                <Button
+                  key={pSymbol}
+                  variant="outline"
+                  onClick={() => onPromotionPieceSelect((game.turn() + pSymbol.toUpperCase()) as PromotionPieceOption)}
                   className="w-16 h-16 text-3xl"
                 >
                   {pSymbol === 'n' ? 'N' : pSymbol.toUpperCase()}
@@ -446,6 +442,3 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-    
-
-    
