@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Chess, Square, PieceSymbol, SQUARES } from 'chess.js';
@@ -38,7 +39,7 @@ const ChessboardGame = () => {
   const [moveFrom, setMoveFrom] = useState<Square | ''>('');
   const [moveTo, setMoveTo] = useState<Square | null>(null);
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
-  const [promotionTo, setPromotionTo] = useState<PieceSymbol | null>(null);
+  // const [promotionTo, setPromotionTo] = useState<PieceSymbol | null>(null); // This state seems unused
   const [rightClickedSquares, setRightClickedSquares] = useState<Record<string, React.CSSProperties>>({});
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({});
   const [lastMoveSquares, setLastMoveSquares] = useState<Record<string, React.CSSProperties>>({});
@@ -49,12 +50,12 @@ const ChessboardGame = () => {
   const [isBlackTimerActive, setIsBlackTimerActive] = useState(false);
   const [gameStatus, setGameStatus] = useState("White to move. Select a mode to start.");
   const [gameOver, setGameOver] = useState(false);
-  const [timerResetKey, setTimerResetKey] = useState(0); // Used to force timer reset
+  const [timerResetKey, setTimerResetKey] = useState(0);
 
   const CHESS_BOARD_LIGHT_COLOR = '#eeeed2';
   const CHESS_BOARD_DARK_COLOR = '#769656';
-  const HIGHLIGHT_MOVE_COLOR = '#f6f669'; // Yellowish
-  const HIGHLIGHT_LAST_MOVE_COLOR = '#aad751'; // Greenish
+  const HIGHLIGHT_MOVE_COLOR = '#f6f669';
+  const HIGHLIGHT_LAST_MOVE_COLOR = '#aad751';
 
   const updateGameStatus = useCallback(() => {
     if (game.isCheckmate()) {
@@ -76,26 +77,31 @@ const ChessboardGame = () => {
       setGameStatus(`${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' (Check!)' : ''}.`);
       setGameOver(false);
     }
-  }, [game]);
+  }, [game]); // Keep game as dependency, setters are stable
 
   useEffect(() => {
     updateGameStatus();
   }, [fen, updateGameStatus]);
 
-  const safeGameMutate = (modify: (g: Chess) => void) => {
-    setGame((g) => {
-      const update = new Chess(g.fen());
+  const safeGameMutate = useCallback((modify: (g: Chess) => void) => {
+    setGame((currentGame) => {
+      const update = new Chess(currentGame.fen());
       modify(update);
       setFen(update.fen());
       return update;
     });
-  };
+  }, []); // setGame and setFen are stable setters, so empty array or [setGame, setFen]
 
-  const makeMove = (move: ShortMove | string) => {
+  const makeMove = useCallback((move: ShortMove | string) => {
+    // Check if game is over before attempting a move
+    if (game.isGameOver()) {
+        toast({ title: "Game Over", description: "Cannot make moves, the game has ended.", variant: "destructive" });
+        return false;
+    }
     try {
-      const result = game.move(move);
+      const result = game.move(move); // Operate on the game instance from state directly
       if (result) {
-        setFen(game.fen());
+        setFen(game.fen()); // Update FEN from the modified game instance
         setLastMoveSquares({
           [result.from]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
           [result.to]: { backgroundColor: HIGHLIGHT_LAST_MOVE_COLOR },
@@ -111,16 +117,19 @@ const ChessboardGame = () => {
           setIsBlackTimerActive(true);
           setIsWhiteTimerActive(false);
         }
-        updateGameStatus();
+        // updateGameStatus() will be called by the useEffect listening to 'fen'
         return true;
       }
     } catch (e) {
-      // Catches invalid moves like trying to move opponent's piece if not handled by onPieceDrop logic
       toast({ title: "Invalid Move", description: "The attempted move is invalid.", variant: "destructive" });
       return false;
     }
     return false;
-  };
+  // It's better to pass `game` instance to `makeMove` if it's not using `safeGameMutate`
+  // or ensure `game` object consistency. For now, this structure is common.
+  // Adding `game` to deps, `toast` and setters.
+  }, [game, toast, HIGHLIGHT_LAST_MOVE_COLOR]);
+
 
   const makeRandomMove = useCallback(() => {
     if (game.isGameOver()) return;
@@ -129,7 +138,7 @@ const ChessboardGame = () => {
     const randomIndex = Math.floor(Math.random() * possibleMoves.length);
     const randomMove = possibleMoves[randomIndex];
     makeMove({ from: randomMove.from, to: randomMove.to, promotion: randomMove.promotion });
-  }, [game]);
+  }, [game, makeMove]);
 
   useEffect(() => {
     if (gameOver) return;
@@ -138,13 +147,12 @@ const ChessboardGame = () => {
       (playerMode === 'pvaBlack' && game.turn() === 'w');
 
     if (isAITurn) {
-      // Simple delay for AI move for better UX
       const timeoutId = setTimeout(() => {
         makeRandomMove();
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver]);
+  }, [fen, playerMode, game, makeRandomMove, gameOver]); // game is already here, fen implies game state changes too
 
 
   const onPieceDrop = (sourceSquare: Square, targetSquare: Square, piece: Piece) => {
@@ -152,42 +160,41 @@ const ChessboardGame = () => {
     
     const currentTurn = game.turn();
     if ((playerMode === 'pvaWhite' && currentTurn === 'b') || (playerMode === 'pvaBlack' && currentTurn === 'w')) {
-      return false; // AI's turn
+      return false; 
     }
     if ((boardOrientation === 'black' && piece.startsWith('w')) || (boardOrientation === 'white' && piece.startsWith('b'))){
-        // if player is playing pvp as black, they shouldn't be able to move white pieces & vice versa
         if (playerMode === 'pvp') return false;
     }
-
 
     const gameMove = {
       from: sourceSquare,
       to: targetSquare,
-      promotion: 'q' as PieceSymbol, // Default to queen, will be updated if needed
+      promotion: 'q' as PieceSymbol,
     };
 
     const foundMove = game.moves({ verbose: true }).find(m => m.from === sourceSquare && m.to === targetSquare);
     
-    if (foundMove?.flags.includes('p')) { // Promotion move
+    if (foundMove?.flags.includes('p')) { 
       setMoveFrom(sourceSquare);
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false; // Prevent react-chessboard from auto-making the move
+      return false; 
     }
 
+    // Use the memoized makeMove
     const moveSuccessful = makeMove(gameMove);
     return moveSuccessful;
   };
-
+  
   const onSquareClick = (square: Square) => {
     if (gameOver) return;
-    setRightClickedSquares({}); // Clear right-click highlights
+    setRightClickedSquares({});
 
-    if (!moveFrom) { // First click (selecting a piece)
+    if (!moveFrom) {
       const pieceOnSquare = game.get(square);
       if (pieceOnSquare && pieceOnSquare.color === game.turn()) {
          if ((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w')) {
-          return; // AI's turn
+          return;
         }
         setMoveFrom(square);
         const moves = game.moves({ square, verbose: true });
@@ -203,14 +210,20 @@ const ChessboardGame = () => {
         newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR };
         setOptionSquares(newOptionSquares);
       }
-    } else { // Second click (making a move or deselecting)
-      if (square === moveFrom) { // Deselecting
+    } else { 
+      if (square === moveFrom) { 
         setMoveFrom('');
         setOptionSquares({});
         return;
       }
-      onPieceDrop(moveFrom, square, game.get(moveFrom)?.type as Piece); // Cast as Piece, though it might be null
-      // onPieceDrop handles move logic and resetting highlights
+      const piece = game.get(moveFrom);
+      if (piece) { // Ensure piece exists before attempting to get its type
+        onPieceDrop(moveFrom, square, (piece.color + piece.type) as Piece);
+      } else {
+         // Handle case where piece might be null if state is inconsistent, though unlikely here
+         setMoveFrom('');
+         setOptionSquares({});
+      }
     }
   };
   
@@ -222,14 +235,14 @@ const ChessboardGame = () => {
     setMoveFrom('');
     setMoveTo(null);
     setOptionSquares({});
-    return true; // Indicate promotion handled
+    return true;
   };
 
   const resetGame = useCallback(() => {
     safeGameMutate(g => g.reset());
-    setFen(new Chess().fen()); // Ensure FEN is reset to initial
+    setFen(new Chess().fen());
     setGameOver(false);
-    setIsWhiteTimerActive(playerMode !== 'pvaBlack'); // White starts unless AI is white
+    setIsWhiteTimerActive(playerMode !== 'pvaBlack');
     setIsBlackTimerActive(playerMode === 'pvaBlack');
     setWhiteTime(INITIAL_TIME_SECONDS);
     setBlackTime(INITIAL_TIME_SECONDS);
@@ -237,28 +250,27 @@ const ChessboardGame = () => {
     setOptionSquares({});
     setLastMoveSquares({});
     setRightClickedSquares({});
-    setTimerResetKey(prev => prev + 1); // Force timer components to re-initialize
+    setTimerResetKey(prev => prev + 1);
     if (playerMode === 'pvp') setBoardOrientation('white');
     else if (playerMode === 'pvaWhite') setBoardOrientation('white');
     else if (playerMode === 'pvaBlack') setBoardOrientation('black');
-    updateGameStatus();
-  }, [playerMode, safeGameMutate, updateGameStatus]);
+    // Do NOT call updateGameStatus() here; it's handled by the useEffect watching 'fen'
+  }, [playerMode, safeGameMutate]); // Removed updateGameStatus from deps
 
   useEffect(() => {
-    resetGame(); // Reset game when mode changes
-  }, [playerMode, resetGame]);
+    resetGame();
+  }, [playerMode, resetGame]); // This useEffect should now be stable
 
-  const handleTimeUp = (player: 'white' | 'black') => {
+  const handleTimeUp = useCallback((player: 'white' | 'black') => {
     if (gameOver) return;
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
     setGameOver(true);
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
-  };
+  }, [gameOver]); // Setters are stable
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
-    // ResetGame is called by useEffect on playerMode change
   };
   
   return (
@@ -279,9 +291,9 @@ const ChessboardGame = () => {
 
       <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
         <TimerDisplay
-            initialTime={blackTime}
+            initialTime={INITIAL_TIME_SECONDS} // Pass initial constant, not state
             isActive={isBlackTimerActive && !gameOver}
-            onTimeUp={() => handleTimeUp('black')}
+            onTimeUp={() => handleTimeUp('black')} // Memoize with useCallback if handleTimeUp changes often
             key={`black-timer-${timerResetKey}`}
           />
       </div>
@@ -305,7 +317,7 @@ const ChessboardGame = () => {
             ...lastMoveSquares,
             ...rightClickedSquares,
           }}
-          promotionDialogVariant="basic" // Use react-chessboard's basic promotion or implement custom with ShadCN
+          promotionDialogVariant="basic"
           arePiecesDraggable={!gameOver && !((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w'))}
           id="NextChessboard"
         />
@@ -313,9 +325,9 @@ const ChessboardGame = () => {
 
        <div className="w-full max-w-md md:max-w-lg lg:max-w-xl flex justify-center">
          <TimerDisplay
-            initialTime={whiteTime}
+            initialTime={INITIAL_TIME_SECONDS} // Pass initial constant, not state
             isActive={isWhiteTimerActive && !gameOver}
-            onTimeUp={() => handleTimeUp('white')}
+            onTimeUp={() => handleTimeUp('white')} // Memoize with useCallback if handleTimeUp changes often
             key={`white-timer-${timerResetKey}`}
           />
       </div>
@@ -346,3 +358,5 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
+
+    
