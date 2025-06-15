@@ -178,9 +178,6 @@ const ChessboardGame = () => {
     }
 
     if (!moveResult) {
-      // This case handles illegal moves that don't throw, e.g., moving into check.
-      // For UI initiated moves, onSquareClick or onPieceDrop might provide specific feedback.
-      // For AI moves, this indicates an issue with AI logic if it happens.
       setToastMessage({
         id: `illegalMove-${Date.now()}`,
         title: "Illegal Move",
@@ -221,6 +218,7 @@ const ChessboardGame = () => {
     game,
     gameOver,
     HIGHLIGHT_LAST_MOVE_COLOR,
+    setToastMessage, 
     setGame,
     setFen,
     setLastMoveSquares,
@@ -231,7 +229,6 @@ const ChessboardGame = () => {
     setCapturedByBlack,
     setIsWhiteTimerActive,
     setIsBlackTimerActive,
-    // setToastMessage is stable
   ]);
 
 
@@ -272,27 +269,20 @@ const ChessboardGame = () => {
         return false;
     }
 
-    // Check if the move is a pawn promotion to decide if we need to show the dialog
-    // We use a temporary game instance to check moves without altering the main game state
-    // This way, we can inspect flags like 'p' for promotion.
     const tempGame = new Chess(game.fen());
     const moveDetails = tempGame.moves({ square: sourceSquare, verbose: true })
                          .find(m => m.to === targetSquare);
 
-    if (moveDetails?.flags.includes('p')) { // 'p' indicates a promotion
+    if (moveDetails?.flags.includes('p')) { 
       setMoveFrom(sourceSquare); 
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false; // Signal to react-chessboard to await promotion selection
+      return false; 
     }
 
-    // If it's not a promotion, make the move directly.
-    // The `gameMove` object should NOT include `promotion` for non-pawn moves.
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      // No 'promotion' field here for non-promotion moves.
-      // chess.js move() handles 'promotion' being undefined.
     };
 
     const moveSuccessful = makeMove(gameMove);
@@ -331,17 +321,16 @@ const ChessboardGame = () => {
       
       const pieceToMove = game.get(moveFrom);
       if (pieceToMove) {
-        const moveSuccessful = onPieceDrop(moveFrom, square, (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece);
-        if (!moveSuccessful) {
-          // If move failed (e.g. illegal, invalid, or promotion dialog shown), clear highlights.
-          // moveFrom remains selected if it wasn't a promotion dialog trigger, allowing user to pick a different target.
-          // If it was a promotion dialog trigger, onPieceDrop returned false, and showPromotionDialog is true.
-          // onPromotionPieceSelect will eventually clear moveFrom.
+        // Construct the piece string react-chessboard expects: e.g., 'wP', 'bN'
+        const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
+        const moveSuccessful = onPieceDrop(moveFrom, square, pieceString);
+        if (!moveSuccessful && !showPromotionDialog) { // Clear highlights if move failed and it wasn't due to promotion dialog
           setOptionSquares({});
         }
         // If moveSuccessful is true, makeMove already resets moveFrom and optionSquares.
+        // If showPromotionDialog is true, onPromotionPieceSelect will handle cleanup.
       } else {
-         setMoveFrom('');
+         setMoveFrom(''); // Should not happen if moveFrom is valid
          setOptionSquares({});
       }
     }
@@ -381,15 +370,13 @@ const ChessboardGame = () => {
       setBoardOrientation('white');
     }
     
-    // Set initial timer state based on whose turn it is
     if (newGame.turn() === 'w') {
       setIsWhiteTimerActive(true);
       setIsBlackTimerActive(false);
-    } else { // Should not happen for a new game, but defensive.
+    } else { 
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-    // updateGameStatus(); // fen change in useEffect will trigger this
   }, [playerMode, initialTimeSetting ]);
 
 
