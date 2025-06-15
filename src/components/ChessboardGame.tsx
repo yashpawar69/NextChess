@@ -164,6 +164,7 @@ const ChessboardGame = () => {
   const HIGHLIGHT_MOVE_COLOR = 'hsl(var(--chess-highlight-move))';
   const HIGHLIGHT_LAST_MOVE_COLOR = 'hsl(var(--chess-highlight-last))';
 
+
   const handleTimeUp = useCallback((player: 'white' | 'black') => {
     if (gameOver) return;
     setGameStatus(`${player === 'white' ? 'Black' : 'White'} wins on time!`);
@@ -198,7 +199,7 @@ const ChessboardGame = () => {
     setIsWhiteTimerActive(false);
     setIsBlackTimerActive(false);
   }, [setGameOver, setGameStatus, setDrawOffer, setShowDrawOfferDialog, setDrawType, setShowDrawGameDialog, setIsWhiteTimerActive, setIsBlackTimerActive]);
-
+  
   const handleRejectDraw = useCallback(() => {
     const offeringPlayer = drawOffer;
     setDrawOffer(null);
@@ -261,7 +262,7 @@ const ChessboardGame = () => {
         setWinner(null);
         setDrawType("Stalemate");
         setShowDrawGameDialog(true);
-      } else if (game.isDraw()) { // Handles other draws like threefold repetition, 50-move rule, insufficient material
+      } else if (game.isDraw()) { 
         setGameStatus("Draw!");
         setGameOver(true);
         setIsWhiteTimerActive(false);
@@ -316,7 +317,6 @@ const ChessboardGame = () => {
       return false;
     }
 
-    // Validate the move structure and legality on a temporary instance
     const validationGame = new Chess(game.fen());
     let preValidationMoveResult;
     try {
@@ -344,9 +344,21 @@ const ChessboardGame = () => {
 
     const pgn = game.pgn();
     const nextGameInstance = new Chess();
-    nextGameInstance.load_pgn(pgn); 
+    nextGameInstance.loadPgn(pgn); 
 
-    const moveResult = nextGameInstance.move(move); 
+    let moveResult;
+    try {
+      moveResult = nextGameInstance.move(move);
+    } catch (e: unknown) {
+      console.error("Error during chess.js game.move:", e instanceof Error ? e.message : String(e));
+      setToastMessage({
+        id: `moveError-${Date.now()}`,
+        title: "Move Error",
+        description: "An unexpected error occurred while making the move.",
+        variant: "destructive"
+      });
+      return false;
+    }
 
     if (!moveResult) {
         console.error("Error: Move was valid on temp instance but failed on PGN-loaded instance. FEN:", game.fen(), "Move:", move, "PGN:", pgn);
@@ -372,7 +384,7 @@ const ChessboardGame = () => {
     setMoveTo(null);
 
     if (moveResult.captured) {
-      if (moveResult.color === 'w') { // color of the piece that moved
+      if (moveResult.color === 'w') { 
         setCapturedByWhite(prev => [...prev, moveResult.captured!]);
       } else {
         setCapturedByBlack(prev => [...prev, moveResult.captured!]);
@@ -392,18 +404,18 @@ const ChessboardGame = () => {
     gameOver,
     drawOffer,
     HIGHLIGHT_LAST_MOVE_COLOR,
-    setToastMessage,
-    setGame,
-    setFen,
-    setMoveHistory,
-    setLastMoveSquares,
-    setOptionSquares,
-    setMoveFrom,
-    setMoveTo,
-    setCapturedByWhite,
-    setCapturedByBlack,
-    setIsWhiteTimerActive,
-    setIsBlackTimerActive,
+    setToastMessage, 
+    setGame, 
+    setFen, 
+    setMoveHistory, 
+    setLastMoveSquares, 
+    setOptionSquares, 
+    setMoveFrom, 
+    setMoveTo, 
+    setCapturedByWhite, 
+    setCapturedByBlack, 
+    setIsWhiteTimerActive, 
+    setIsBlackTimerActive
   ]);
   
   const makeRandomMove = useCallback(() => {
@@ -451,7 +463,6 @@ const ChessboardGame = () => {
       setIsBlackTimerActive(true);
       setIsWhiteTimerActive(false);
     }
-    // updateGameStatus will be called by useEffect on fen change
   }, [playerMode, initialTimeSetting]);
 
 
@@ -468,31 +479,28 @@ const ChessboardGame = () => {
 
   useEffect(() => {
     updateGameStatus();
-  }, [fen, updateGameStatus, drawOffer]); // fen dependency ensures status updates after a move
+  }, [fen, updateGameStatus, drawOffer]); 
 
   useEffect(() => {
-    if (gameOver || drawOffer) return; // Don't make AI moves if game over or draw offer pending
+    if (gameOver || drawOffer) return; 
     const isAITurn =
       (playerMode === 'pvaWhite' && game.turn() === 'b') ||
       (playerMode === 'pvaBlack' && game.turn() === 'w');
 
     if (isAITurn) {
-      // AI response to a draw offer
       if (drawOffer && ((playerMode === 'pvaWhite' && drawOffer === 'w') || (playerMode === 'pvaBlack' && drawOffer === 'b'))) {
-        // AI logic for responding to draw offer (e.g., always reject for simplicity here)
         const aiRejectTimeout = setTimeout(() => {
           handleRejectDraw(); 
-        }, 1000); // AI "thinks" for a second
+        }, 1000); 
         return () => clearTimeout(aiRejectTimeout);
       } else {
-        // AI makes a regular move
         const timeoutId = setTimeout(() => {
           makeRandomMove();
-        }, 500); // AI "thinks" for half a second
+        }, 500); 
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer, handleRejectDraw]); // fen ensures this runs after AI's turn is due
+  }, [fen, playerMode, game, makeRandomMove, gameOver, drawOffer, handleRejectDraw]); 
   
   useEffect(() => {
     resetGame();
@@ -505,32 +513,27 @@ const ChessboardGame = () => {
     const gameTurn = game.turn();
     const movingPieceColor = piece.charAt(0);
 
-    // Prevent player from moving opponent's pieces or AI's pieces
     if ((playerMode === 'pvaWhite' && gameTurn === 'b') || (playerMode === 'pvaBlack' && gameTurn === 'w')) {
-      return false; // AI's turn, human cannot move
+      return false; 
     }
-    if (gameTurn !== movingPieceColor) { // Trying to move opponent's piece in PvP
+    if (gameTurn !== movingPieceColor) { 
         return false;
     }
 
-    // Check for promotion
-    const tempGame = new Chess(game.fen()); // Use a temporary game to check move details
+    const tempGame = new Chess(game.fen()); 
     const moveDetails = tempGame.moves({ square: sourceSquare, verbose: true })
                          .find(m => m.to === targetSquare);
     
     if (moveDetails?.flags.includes('p') && (targetSquare.endsWith('8') || targetSquare.endsWith('1'))) {
-      // This is a pawn promotion move
       setMoveFrom(sourceSquare);
       setMoveTo(targetSquare);
       setShowPromotionDialog(true);
-      return false; // Let react-chessboard handle the promotion dialog
+      return false; 
     }
 
-    // Regular move
     const gameMove: ShortMove = {
       from: sourceSquare,
       to: targetSquare,
-      // No promotion property for non-pawn-promotion moves
     };
     
     const moveSuccessful = makeMove(gameMove);
@@ -540,12 +543,11 @@ const ChessboardGame = () => {
   const onSquareClick = (square: Square) => {
     if (gameOver || drawOffer) return;
 
-    // Prevent clicks if it's AI's turn
     if ((playerMode === 'pvaWhite' && game.turn() === 'b') || (playerMode === 'pvaBlack' && game.turn() === 'w')) {
       return;
     }
 
-    if (!moveFrom) { // First click (selecting a piece)
+    if (!moveFrom) { 
       const pieceOnSquare = game.get(square);
       if (pieceOnSquare && pieceOnSquare.color === game.turn()) {
         setMoveFrom(square);
@@ -554,16 +556,16 @@ const ChessboardGame = () => {
         moves.forEach(move => {
           newOptionSquares[move.to] = {
             background: game.get(move.to) && game.get(move.to)?.color !== game.turn()
-              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)` // Capture
-              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`, // Move to empty
+              ? `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)` 
+              : `radial-gradient(circle, ${HIGHLIGHT_MOVE_COLOR} 30%, transparent 35%)`, 
             borderRadius: '50%',
           };
         });
-        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR }; // Highlight selected piece
+        newOptionSquares[square] = { backgroundColor: HIGHLIGHT_MOVE_COLOR }; 
         setOptionSquares(newOptionSquares);
       }
-    } else { // Second click (moving the piece or deselecting)
-      if (square === moveFrom) { // Clicked the same square again (deselect)
+    } else { 
+      if (square === moveFrom) { 
         setMoveFrom('');
         setOptionSquares({});
         return;
@@ -572,15 +574,14 @@ const ChessboardGame = () => {
       const pieceToMove = game.get(moveFrom);
       if (pieceToMove) {
         const pieceString = (pieceToMove.color + pieceToMove.type.toUpperCase()) as Piece;
-        const moveSuccessful = onPieceDrop(moveFrom, square, pieceString); // Use onPieceDrop logic for consistency
+        const moveSuccessful = onPieceDrop(moveFrom, square, pieceString); 
         
-        if (!moveSuccessful && !showPromotionDialog) { // If move failed and not due to promotion dialog
-          setMoveFrom(''); // Reset selection
+        if (!moveSuccessful && !showPromotionDialog) { 
+          setMoveFrom(''); 
           setOptionSquares({});
         }
-        // If showPromotionDialog became true, onPieceDrop returned false, so keep moveFrom for onPromotionPieceSelect
       } else {
-         setMoveFrom(''); // Should not happen if moveFrom is valid
+         setMoveFrom(''); 
          setOptionSquares({});
       }
     }
@@ -588,24 +589,22 @@ const ChessboardGame = () => {
 
   const onPromotionPieceSelect = (piece?: PromotionPieceOption) => {
     if (piece && moveFrom && moveTo) {
-      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol; // e.g., 'wq' -> 'q'
+      const promotionSymbol = piece.charAt(1).toLowerCase() as PieceSymbol; 
       makeMove({ from: moveFrom, to: moveTo, promotion: promotionSymbol });
     }
     setShowPromotionDialog(false);
     setMoveFrom('');
     setMoveTo(null);
-    setOptionSquares({}); // Clear highlights after promotion
-    return true; // Important for react-chessboard
+    setOptionSquares({}); 
+    return true; 
   };
 
   const handleModeChange = (newMode: PlayerMode) => {
     setPlayerMode(newMode);
-    // Game will be reset by useEffect watching playerMode
   };
 
   const handleTimerChange = (value: string) => {
     setInitialTimeSetting(parseInt(value, 10));
-    // Game will be reset by useEffect watching initialTimeSetting
   };
 
   const canOfferDraw = !gameOver && !drawOffer &&
@@ -831,4 +830,3 @@ const ChessboardGame = () => {
 };
 
 export default ChessboardGame;
-
